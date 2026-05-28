@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
+  "endpoint_id": "organisations",
+  "display_name": "Organisation",
+  "description": "Organisation settings and metadata (single record for the connected tenant).",
+  "tags": ["accounting", "settings"],
+  "operations": {
+    "read": {
+      "request": {
+        "method": "GET",
+        "path": "Organisation"
+      },
+      "response": {
+        "records": { "ref": "response.body.Organisations" },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
+            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
+            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
+            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Organisations": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "OrganisationID":               { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
+                  "APIKey":                       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Name":                         { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "LegalName":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "PaysTax":                      { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "Version":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "OrganisationType":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "BaseCurrency":                 { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "CountryCode":                  { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "IsDemoCompany":                { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "OrganisationStatus":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "RegistrationNumber":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "EmployerIdentificationNumber": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "TaxNumber":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "FinancialYearEndDay":          { "type": "integer", "native_type": "Integer",  "arrow_type": "Int64" },
+                  "FinancialYearEndMonth":        { "type": "integer", "native_type": "Integer",  "arrow_type": "Int64" },
+                  "SalesTaxBasis":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "SalesTaxPeriod":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "DefaultSalesTax":              { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "DefaultPurchasesTax":          { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "PeriodLockDate":               { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
+                  "EndOfYearLockDate":            { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
+                  "CreatedDateUTC":               { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
+                  "Timezone":                     { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "OrganisationEntityType":       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "ShortCode":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Class":                        { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Edition":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "LineOfBusiness":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Addresses":                    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "Phones":                       { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "ExternalLinks":                { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "PaymentTerms":                 { "type": "object",  "native_type": "Json",     "arrow_type": "Json" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

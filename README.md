@@ -1,10 +1,10 @@
-# REPLACE_CONNECTOR_NAME
+# Xero
 
-REPLACE with a short description of what this connector does and what system it integrates with.
+Read accounting data from [Xero](https://www.xero.com), a cloud accounting platform for small and medium businesses, via the Xero Accounting API.
 
 ## What is this?
 
-This is a **connector** — a configuration that defines how to authenticate with REPLACE_SYSTEM_NAME and what data endpoints are available for reading and writing. It does not move data by itself. Instead, it is used by the [Analitiq](https://analitiq-app.com) data integration platform or the open-source `analitiq-dip-registry` engine to set up data pipelines.
+This is a **connector** — a configuration that defines how to authenticate with Xero and what data endpoints are available for reading and writing. It does not move data by itself. Instead, it is used by the [Analitiq](https://analitiq-app.com) data integration platform or the open-source `analitiq-dip-registry` engine to set up data pipelines.
 
 ## How to use this connector
 
@@ -27,39 +27,49 @@ The `analitiq-plugin-dataflow` plugin will automatically fetch the required conn
 
 ## Prerequisites
 
-REPLACE with what the user needs before they can connect. Be specific:
-
-- e.g., "A registered OAuth2 application with client ID and client secret"
-- e.g., "An API key generated from your account settings"
-- e.g., "Admin access to your organisation's account"
+- A Xero account with access to at least one organisation.
+- A registered OAuth2 app in the [Xero Developer portal](https://developer.xero.com/app/manage) with a **Client ID** and **Client Secret**.
+- The app's redirect URI configured to match the one used by your Analitiq deployment.
 
 ## Authentication
 
-REPLACE with a plain-language explanation of how to authenticate. If the system supports multiple authentication methods, explain when to use each one.
+Xero uses **OAuth2 (authorization code grant)**. You authorise the connector in the browser, Xero issues an access token and a refresh token (via the `offline_access` scope), and the connector refreshes the access token automatically as it expires.
+
+Because a single Xero login can have access to multiple organisations ("tenants"), after authorising you select **which organisation** to connect. The connector calls `GET https://api.xero.com/connections`, lists your authorised organisations, and stores the chosen `tenantId`. Every Accounting API request then sends that value in the mandatory `Xero-tenant-id` header.
+
+This connector requests read-only scopes: `accounting.transactions.read`, `accounting.contacts.read`, `accounting.settings.read`, `accounting.journals.read`, `accounting.reports.read`, plus `openid profile email offline_access`.
 
 ### How to get your credentials
 
-REPLACE with step-by-step instructions:
-
-1. e.g., "Log in to your account at https://app.example.com"
-2. e.g., "Navigate to Settings > API Keys"
-3. e.g., "Click 'Generate New Key' and copy the key"
+1. Log in to the [Xero Developer portal](https://developer.xero.com/app/manage).
+2. Click **New app**, give it a name, and set the OAuth2 redirect URI to the one provided by your Analitiq deployment.
+3. Open the app's **Configuration** page and copy the **Client ID**.
+4. Click **Generate a secret** and copy the **Client Secret** (shown only once).
+5. Enter the Client ID and Client Secret when prompted, then complete the browser consent and pick the organisation to sync.
 
 ## Available Endpoints
 
-The table below lists all data endpoints defined by this connector. Each endpoint represents a resource you can read from or write to.
+All endpoints are read-only. Most transactional endpoints support incremental sync via the `If-Modified-Since` header; large collections are paginated.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-|          |        |             |
+| `accounts` | GET | The full chart of accounts. |
+| `bank_transactions` | GET | Spend- and receive-money bank transactions. |
+| `contacts` | GET | Customers and suppliers (contacts). |
+| `credit_notes` | GET | Credit notes against sales and purchase invoices. |
+| `invoices` | GET | Sales (ACCREC) and purchase (ACCPAY) invoices. |
+| `items` | GET | Inventory and non-inventory products/services. |
+| `journals` | GET | Immutable general-ledger journals. |
+| `manual_journals` | GET | Manual journals posted to the general ledger. |
+| `organisations` | GET | Organisation settings and metadata for the connected tenant. |
+| `payments` | GET | Payments against invoices, credit notes, prepayments and overpayments. |
 
 ## Limitations
 
-REPLACE with any important limitations users should know about:
-
-- **Rate limits** — e.g., "The API allows 60 requests per minute"
-- **Data freshness** — e.g., "Data may be delayed by up to 15 minutes"
-- **Sandbox vs Production** — e.g., "Sandbox and production use different API keys"
+- **Rate limits** — Xero allows 60 calls per minute and 5,000 calls per day per organisation (tenant), with a concurrency cap. The connector throttles to 60 requests / 60 seconds.
+- **Multi-tenant** — each connection targets a single organisation. Connect once per organisation you want to sync.
+- **Dates** — Xero serialises timestamps in its `/Date(…)/` format; date/time fields are surfaced as strings.
+- **Incremental sync** — `journals` track creation only (immutable), so they replicate on `CreatedDateUTC`; other transactional endpoints replicate on `UpdatedDateUTC`. `accounts`, `items`, `organisations` are full-refresh / settings resources.
 
 ## For AI agents
 
@@ -87,7 +97,8 @@ All connectors in this registry are community-maintained and live at [github.com
 
 ## Links
 
-- [API Documentation](REPLACE with URL)
+- [Xero Accounting API Documentation](https://developer.xero.com/documentation/api/accounting/overview)
+- [Xero Developer portal](https://developer.xero.com/app/manage)
 - [Analitiq Cloud](https://analitiq-app.com)
 - [Analitiq Engine (open source)](https://github.com/analitiq-ai/analitiq-engine)
 - [Analitiq DIP Registry (open source)](https://github.com/analitiq-dip-registry)

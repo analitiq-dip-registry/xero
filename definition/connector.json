@@ -1,32 +1,102 @@
 {
   "$schema": "https://schemas.analitiq.ai/connector/latest.json",
   "kind": "api",
-  "display_name": "REPLACE",
-  "description": "REPLACE with a short description",
+  "display_name": "Xero",
+  "description": "Xero cloud accounting platform. Read accounting data — invoices, contacts, bank transactions, credit notes, payments, items, journals and more — via the Xero Accounting API (api.xro/2.0).",
+  "documentation_url": "https://developer.xero.com/documentation/api/accounting/overview",
+  "tags": ["api", "accounting", "xero", "oauth2", "finance"],
   "version": "0.0.0",
   "default_transport": "api",
+  "transport_defaults": {
+    "transport_type": "http",
+    "headers": {
+      "Accept": "application/json",
+      "Authorization": { "template": "Bearer ${auth.access_token}" }
+    },
+    "timeout_seconds": 30
+  },
   "transports": {
     "api": {
       "transport_type": "http",
-      "base_url": "https://api.example.com/v1/",
+      "base_url": "https://api.xero.com/api.xro/2.0/",
       "headers": {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Authorization": { "template": "Bearer ${secrets.api_key}" }
+        "Xero-tenant-id": { "ref": "connection.selections.tenantId" }
       },
-      "timeout_seconds": 30,
       "rate_limit": {
         "max_requests": 60,
         "time_window_seconds": 60
       }
+    },
+    "identity": {
+      "transport_type": "http",
+      "base_url": "https://api.xero.com"
+    },
+    "auth": {
+      "transport_type": "http",
+      "base_url": "https://identity.xero.com",
+      "headers": {
+        "Authorization": {
+          "function": "basic_auth",
+          "input": {
+            "username": { "ref": "connection.parameters.client_id" },
+            "password": { "ref": "secrets.client_secret" }
+          }
+        }
+      }
+    },
+    "login": {
+      "transport_type": "http",
+      "base_url": "https://login.xero.com"
     }
   },
   "auth": {
-    "type": "api_key"
+    "type": "oauth2_authorization_code",
+    "authorize": {
+      "transport_ref": "login",
+      "method": "GET",
+      "path": "/identity/connect/authorize",
+      "body": {
+        "template": "response_type=code&client_id=${connection.parameters.client_id}&redirect_uri=${runtime.oauth.redirect_uri}&scope=openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.settings.read accounting.journals.read accounting.reports.read&state=${runtime.oauth.state}"
+      }
+    },
+    "token_exchange": {
+      "transport_ref": "auth",
+      "method": "POST",
+      "path": "/connect/token",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": {
+        "template": "grant_type=authorization_code&code=${runtime.oauth.code}&redirect_uri=${runtime.oauth.redirect_uri}"
+      }
+    },
+    "refresh": {
+      "transport_ref": "auth",
+      "method": "POST",
+      "path": "/connect/token",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body": {
+        "template": "grant_type=refresh_token&refresh_token=${auth.refresh_token}"
+      }
+    }
   },
   "connection_contract": {
     "inputs": {
-      "api_key": {
+      "client_id": {
+        "source": "user",
+        "phase": "pre_auth",
+        "storage": "connection.parameters",
+        "type": "string",
+        "required": true,
+        "ui": {
+          "label": "Client ID",
+          "widget": "text",
+          "help_text": "OAuth2 client ID of your registered Xero app (from the Xero Developer portal)."
+        }
+      },
+      "client_secret": {
         "source": "user",
         "phase": "pre_auth",
         "storage": "secrets",
@@ -34,10 +104,28 @@
         "required": true,
         "secret": true,
         "ui": {
-          "label": "API Key",
-          "widget": "password"
+          "label": "Client Secret",
+          "widget": "password",
+          "help_text": "OAuth2 client secret of your registered Xero app (from the Xero Developer portal)."
         }
       }
-    }
+    },
+    "post_auth_outputs": {
+      "tenantId": {
+        "mode": "user_selection",
+        "storage": "connection.selections",
+        "type": "string",
+        "value_path": "connection.selections.tenantId",
+        "label_path": "tenantName",
+        "options_request": {
+          "transport_ref": "identity",
+          "method": "GET",
+          "path": "/connections"
+        }
+      }
+    },
+    "required_for_activation": [
+      "connection.selections.tenantId"
+    ]
   }
 }
