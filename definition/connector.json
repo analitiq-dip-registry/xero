@@ -4,14 +4,22 @@
   "display_name": "Xero",
   "description": "Xero cloud accounting platform. Read accounting data — invoices, contacts, bank transactions, credit notes, payments, items, journals and more — via the Xero Accounting API (api.xro/2.0).",
   "documentation_url": "https://developer.xero.com/documentation/api/accounting/overview",
-  "tags": ["api", "accounting", "xero", "oauth2", "finance"],
-  "version": "0.0.0",
+  "tags": [
+    "api",
+    "accounting",
+    "xero",
+    "oauth2",
+    "finance"
+  ],
+  "version": "0.0.1",
   "default_transport": "api",
   "transport_defaults": {
     "transport_type": "http",
     "headers": {
       "Accept": "application/json",
-      "Authorization": { "template": "Bearer ${auth.access_token}" }
+      "Authorization": {
+        "template": "Bearer ${auth.access_token}"
+      }
     },
     "timeout_seconds": 30
   },
@@ -20,7 +28,9 @@
       "transport_type": "http",
       "base_url": "https://api.xero.com/api.xro/2.0/",
       "headers": {
-        "Xero-tenant-id": { "ref": "connection.selections.tenantId" }
+        "Xero-tenant-id": {
+          "ref": "connection.selections.tenantId"
+        }
       },
       "rate_limit": {
         "max_requests": 60,
@@ -38,8 +48,12 @@
         "Authorization": {
           "function": "basic_auth",
           "input": {
-            "username": { "ref": "connection.parameters.client_id" },
-            "password": { "ref": "secrets.client_secret" }
+            "username": {
+              "ref": "connection.parameters.client_id"
+            },
+            "password": {
+              "ref": "secrets.client_secret"
+            }
           }
         }
       }
