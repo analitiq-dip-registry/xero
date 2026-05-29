@@ -1,5 +1,9 @@
 # Xero
 
+[![Status: unverified](https://img.shields.io/badge/status-unverified-orange)](https://github.com/analitiq-dip-registry)
+[![Latest release](https://img.shields.io/github/v/release/analitiq-dip-registry/xero)](https://github.com/analitiq-dip-registry/xero/releases)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
 Read accounting data from [Xero](https://www.xero.com), a cloud accounting platform for small and medium businesses, via the Xero Accounting API.
 
 ## What is this?
