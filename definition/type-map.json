@@ -1,0 +1,9 @@
+[
+  { "match": "exact", "native": "String",   "canonical": "Utf8" },
+  { "match": "exact", "native": "UUID",     "canonical": "Utf8" },
+  { "match": "exact", "native": "DateTime", "canonical": "Utf8" },
+  { "match": "exact", "native": "Boolean",  "canonical": "Boolean" },
+  { "match": "exact", "native": "Integer",  "canonical": "Int64" },
+  { "match": "exact", "native": "Decimal",  "canonical": "Float64" },
+  { "match": "exact", "native": "Json",     "canonical": "Json" }
+]

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
+  "endpoint_id": "contacts",
+  "display_name": "Contacts",
+  "description": "Customers and suppliers (contacts) in the organisation.",
+  "tags": ["accounting", "contacts"],
+  "operations": {
+    "read": {
+      "request": {
+        "method": "GET",
+        "path": "Contacts"
+      },
+      "params": {
+        "page": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "controlled_by": "pagination",
+          "description": "1-based page number."
+        },
+        "pageSize": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "controlled_by": "pagination",
+          "default": 100,
+          "maximum": 1000,
+          "description": "Records per page (max 1000)."
+        },
+        "If-Modified-Since": {
+          "in": "header",
+          "type": "string",
+          "required": false,
+          "controlled_by": "replication",
+          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+        }
+      },
+      "pagination": {
+        "type": "page",
+        "page": { "param": "page", "initial": 1 },
+        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
+        "stop_when": { "empty": { "ref": "response.body.Contacts" } }
+      },
+      "replication": {
+        "supported_methods": ["full_refresh", "incremental"],
+        "cursor_mappings": [
+          {
+            "cursor_field": "UpdatedDateUTC",
+            "param": "If-Modified-Since",
+            "operator": "gte",
+            "format": "date-time"
+          }
+        ]
+      },
+      "response": {
+        "records": { "ref": "response.body.Contacts" },
+        "schema": {
+          "type": "object",
+          "properties": {
+            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
+            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
+            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
+            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Contacts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ContactID":                      { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
+                  "MergedToContactID":              { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
+                  "ContactNumber":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "AccountNumber":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "ContactStatus":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Name":                           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "FirstName":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "LastName":                       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "CompanyNumber":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "EmailAddress":                   { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "ContactPersons":                 { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "BankAccountDetails":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "TaxNumber":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "TaxNumberType":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "AccountsReceivableTaxType":      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "AccountsPayableTaxType":         { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "Addresses":                      { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "Phones":                         { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "IsSupplier":                     { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "IsCustomer":                     { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "SalesDefaultLineAmountType":     { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "PurchasesDefaultLineAmountType": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "DefaultCurrency":                { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "XeroNetworkKey":                 { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "SalesDefaultAccountCode":        { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "PurchasesDefaultAccountCode":    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "SalesTrackingCategories":        { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "PurchasesTrackingCategories":    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "TrackingCategoryName":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "TrackingCategoryOption":         { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "PaymentTerms":                   { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "UpdatedDateUTC":                 { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
+                  "ContactGroups":                  { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "Website":                        { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
+                  "BrandingTheme":                  { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "BatchPayments":                  { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "Discount":                       { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
+                  "Balances":                       { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
+                  "Attachments":                    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "HasAttachments":                 { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "ValidationErrors":               { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
+                  "HasValidationErrors":            { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
+                  "StatusAttributeString":          { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
