@@ -32,8 +32,6 @@ The `analitiq-plugin-dataflow` plugin will automatically fetch the required conn
 ## Prerequisites
 
 - A Xero account with access to at least one organisation.
-- A registered OAuth2 app in the [Xero Developer portal](https://developer.xero.com/app/manage) with a **Client ID** and **Client Secret**.
-- The app's redirect URI configured to match the one used by your Analitiq deployment.
 
 ## Authentication
 
@@ -43,13 +41,12 @@ Because a single Xero login can have access to multiple organisations ("tenants"
 
 This connector requests read-only scopes: `accounting.transactions.read`, `accounting.contacts.read`, `accounting.settings.read`, `accounting.journals.read`, `accounting.reports.read`, plus `openid profile email offline_access`.
 
-### How to get your credentials
+### How to connect
 
-1. Log in to the [Xero Developer portal](https://developer.xero.com/app/manage).
-2. Click **New app**, give it a name, and set the OAuth2 redirect URI to the one provided by your Analitiq deployment.
-3. Open the app's **Configuration** page and copy the **Client ID**.
-4. Click **Generate a secret** and copy the **Client Secret** (shown only once).
-5. Enter the Client ID and Client Secret when prompted, then complete the browser consent and pick the organisation to sync.
+The OAuth2 app (Client ID and Client Secret) is **managed by the platform** — you do not register your own Xero app or supply any credentials.
+
+1. Click **Connect to Xero** and authorise the app in the browser consent screen.
+2. Pick the organisation (tenant) you want to sync.
 
 ## Available Endpoints
 

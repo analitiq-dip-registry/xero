@@ -13,7 +13,7 @@ Cloud accounting platform. This connector reads accounting data via the Xero Acc
 ## Authentication
 
 ### OAuth2 Authorization Code
-- Client app required: yes (register an app in the Xero Developer portal; provides Client ID + Client Secret)
+- Client app required: yes (platform-managed; `client_id` and `client_secret` are provisioned by the Analitiq platform — users do not supply them)
 - Authorize URL: `https://login.xero.com/identity/connect/authorize`
 - Token URL: `https://identity.xero.com/connect/token` (HTTP Basic auth of client_id:client_secret)
 - Refresh: supported via the `offline_access` scope

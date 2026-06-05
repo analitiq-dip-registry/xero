@@ -1,5 +1,6 @@
 {
   "$schema": "https://schemas.analitiq.ai/connector/latest.json",
+  "connector_id": "a93e8911-5409-5b86-9e42-aacef9741937",
   "kind": "api",
   "display_name": "Xero",
   "description": "Xero cloud accounting platform. Read accounting data — invoices, contacts, bank transactions, credit notes, payments, items, journals and more — via the Xero Accounting API (api.xro/2.0).",
@@ -99,29 +100,19 @@
   "connection_contract": {
     "inputs": {
       "client_id": {
-        "source": "user",
-        "phase": "pre_auth",
+        "source": "platform",
+        "phase": "auth",
         "storage": "connection.parameters",
         "type": "string",
-        "required": true,
-        "ui": {
-          "label": "Client ID",
-          "widget": "text",
-          "help_text": "OAuth2 client ID of your registered Xero app (from the Xero Developer portal)."
-        }
+        "required": true
       },
       "client_secret": {
-        "source": "user",
-        "phase": "pre_auth",
+        "source": "platform",
+        "phase": "auth",
         "storage": "secrets",
         "type": "string",
         "required": true,
-        "secret": true,
-        "ui": {
-          "label": "Client Secret",
-          "widget": "password",
-          "help_text": "OAuth2 client secret of your registered Xero app (from the Xero Developer portal)."
-        }
+        "secret": true
       }
     },
     "post_auth_outputs": {
