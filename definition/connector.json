@@ -120,7 +120,7 @@
         "mode": "user_selection",
         "storage": "connection.selections",
         "type": "string",
-        "value_path": "connection.selections.tenantId",
+        "value_path": "tenantId",
         "label_path": "tenantName",
         "options_request": {
           "transport_ref": "identity",
