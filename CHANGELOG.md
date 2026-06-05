@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.3] - 2026-06-05
+
+### Fixed
+- fix: tenant picker value_path must be item-relative, not a storage path (#6)
+
 ## [0.0.2] - 2026-06-05
 
 ### Fixed
