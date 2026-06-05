@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.2] - 2026-06-05
+
+### Fixed
+- fix: platform-managed OAuth client credentials + connector_id (#3)
+
 ## [0.0.1] - 2026-05-29
 
 ### Fixed
