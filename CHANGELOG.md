@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.5] - 2026-07-05
+
+### Fixed
+- fix: set connector_id to the registry slug xero (#8)
+
 ## [0.0.4] - 2026-07-05
 
 ### Fixed

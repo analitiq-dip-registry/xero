@@ -12,7 +12,7 @@
     "oauth2",
     "finance"
   ],
-  "version": "0.0.4",
+  "version": "0.0.5",
   "default_transport": "api",
   "transport_defaults": {
     "transport_type": "http",
