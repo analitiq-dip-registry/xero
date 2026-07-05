@@ -8,7 +8,14 @@
     "read": {
       "request": {
         "method": "GET",
-        "path": "CreditNotes"
+        "path": "CreditNotes",
+        "query": {
+          "page": { "from_param": "page" },
+          "pageSize": { "from_param": "pageSize" }
+        },
+        "headers": {
+          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+        }
       },
       "params": {
         "page": {

@@ -8,7 +8,13 @@
     "read": {
       "request": {
         "method": "GET",
-        "path": "Journals"
+        "path": "Journals",
+        "query": {
+          "offset": { "from_param": "offset" }
+        },
+        "headers": {
+          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+        }
       },
       "params": {
         "offset": {
