@@ -1,6 +1,6 @@
 {
   "$schema": "https://schemas.analitiq.ai/connector/latest.json",
-  "connector_id": "a93e8911-5409-5b86-9e42-aacef9741937",
+  "connector_id": "xero",
   "kind": "api",
   "display_name": "Xero",
   "description": "Xero cloud accounting platform. Read accounting data — invoices, contacts, bank transactions, credit notes, payments, items, journals and more — via the Xero Accounting API (api.xro/2.0).",
