@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.0.4] - 2026-07-05
+
+### Fixed
+- fix: bind declared request params to the request in all endpoints (#7)
+
 ## [0.0.3] - 2026-06-05
 
 ### Fixed
