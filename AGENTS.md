@@ -31,14 +31,14 @@ All read-only. `page` = page-number pagination (100/page, max pageSize 1000); `k
 | Endpoint | Method | Pagination | Incremental cursor | Description |
 |----------|--------|------------|--------------------|-------------|
 | accounts | GET | none | UpdatedDateUTC | Chart of accounts |
-| bank_transactions | GET | page | UpdatedDateUTC | Spend/receive money bank transactions |
+| banktransactions | GET | page | UpdatedDateUTC | Spend/receive money bank transactions |
 | contacts | GET | page | UpdatedDateUTC | Customers and suppliers |
-| credit_notes | GET | page | UpdatedDateUTC | Credit notes |
+| creditnotes | GET | page | UpdatedDateUTC | Credit notes |
 | invoices | GET | page | UpdatedDateUTC | Sales & purchase invoices |
 | items | GET | none | UpdatedDateUTC | Products/services (items list) |
 | journals | GET | keyset (offset by JournalNumber) | CreatedDateUTC | General-ledger journals |
-| manual_journals | GET | page | UpdatedDateUTC | Manual journals |
-| organisations | GET | none | — | Organisation settings/metadata |
+| manualjournals | GET | page | UpdatedDateUTC | Manual journals |
+| organisation | GET | none | — | Organisation settings/metadata |
 | payments | GET | page | UpdatedDateUTC | Payments |
 
 ## Rate Limits

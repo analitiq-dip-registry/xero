@@ -1,6 +1,6 @@
 {
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
-  "endpoint_id": "organisations",
+  "endpoint_id": "organisation",
   "display_name": "Organisation",
   "description": "Organisation settings and metadata (single record for the connected tenant).",
   "tags": ["accounting", "settings"],
