@@ -55,14 +55,14 @@ All endpoints are read-only. Most transactional endpoints support incremental sy
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `accounts` | GET | The full chart of accounts. |
-| `bank_transactions` | GET | Spend- and receive-money bank transactions. |
+| `banktransactions` | GET | Spend- and receive-money bank transactions. |
 | `contacts` | GET | Customers and suppliers (contacts). |
-| `credit_notes` | GET | Credit notes against sales and purchase invoices. |
+| `creditnotes` | GET | Credit notes against sales and purchase invoices. |
 | `invoices` | GET | Sales (ACCREC) and purchase (ACCPAY) invoices. |
 | `items` | GET | Inventory and non-inventory products/services. |
 | `journals` | GET | Immutable general-ledger journals. |
-| `manual_journals` | GET | Manual journals posted to the general ledger. |
-| `organisations` | GET | Organisation settings and metadata for the connected tenant. |
+| `manualjournals` | GET | Manual journals posted to the general ledger. |
+| `organisation` | GET | Organisation settings and metadata for the connected tenant. |
 | `payments` | GET | Payments against invoices, credit notes, prepayments and overpayments. |
 
 ## Limitations
@@ -70,7 +70,7 @@ All endpoints are read-only. Most transactional endpoints support incremental sy
 - **Rate limits** — Xero allows 60 calls per minute and 5,000 calls per day per organisation (tenant), with a concurrency cap. The connector throttles to 60 requests / 60 seconds.
 - **Multi-tenant** — each connection targets a single organisation. Connect once per organisation you want to sync.
 - **Dates** — Xero serialises timestamps in its `/Date(…)/` format; date/time fields are surfaced as strings.
-- **Incremental sync** — `journals` track creation only (immutable), so they replicate on `CreatedDateUTC`; other transactional endpoints replicate on `UpdatedDateUTC`. `accounts`, `items`, `organisations` are full-refresh / settings resources.
+- **Incremental sync** — `journals` track creation only (immutable), so they replicate on `CreatedDateUTC`; other transactional endpoints replicate on `UpdatedDateUTC`. `accounts`, `items`, `organisation` are full-refresh / settings resources.
 
 ## For AI agents
 

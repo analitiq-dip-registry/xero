@@ -1,6 +1,6 @@
 {
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
-  "endpoint_id": "manual_journals",
+  "endpoint_id": "manualjournals",
   "display_name": "Manual Journals",
   "description": "Manual journals posted directly to the general ledger.",
   "tags": ["accounting", "journals", "transactions"],
