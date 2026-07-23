@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.0] - 2026-07-23
+
+### Added
+- fix: pass rc13 validation (type-map filename + endpoint-id locators) (#9)
+
 ## [0.0.5] - 2026-07-05
 
 ### Fixed
