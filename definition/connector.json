@@ -1,9 +1,9 @@
 {
   "$schema": "https://schemas.analitiq.ai/connector/latest.json",
-  "connector_id": "xero",
   "kind": "api",
+  "connector_id": "xero",
   "display_name": "Xero",
-  "description": "Xero cloud accounting platform. Read accounting data — invoices, contacts, bank transactions, credit notes, payments, items, journals and more — via the Xero Accounting API (api.xro/2.0).",
+  "description": "Xero cloud accounting platform. Reads and writes accounting data — invoices, credit notes, contacts, bank transactions, payments, items, accounts, manual journals, the general ledger and organisation settings — via the Xero Accounting API (api.xro/2.0). OAuth 2.0 authorization code with granular accounting scopes and refresh-token rotation; each connection targets exactly one Xero organisation (tenant), selected after authorisation from GET /connections.",
   "documentation_url": "https://developer.xero.com/documentation/api/accounting/overview",
   "tags": [
     "api",
@@ -61,7 +61,10 @@
     },
     "login": {
       "transport_type": "http",
-      "base_url": "https://login.xero.com"
+      "base_url": "https://login.xero.com",
+      "headers_remove": [
+        "Authorization"
+      ]
     }
   },
   "auth": {
@@ -71,7 +74,7 @@
       "method": "GET",
       "path": "/identity/connect/authorize",
       "body": {
-        "template": "response_type=code&client_id=${connection.parameters.client_id}&redirect_uri=${runtime.oauth.redirect_uri}&scope=openid profile email offline_access accounting.transactions.read accounting.contacts.read accounting.settings.read accounting.journals.read accounting.reports.read&state=${runtime.oauth.state}"
+        "template": "response_type=code&client_id=${connection.parameters.client_id}&redirect_uri=${runtime.oauth.redirect_uri}&scope=openid profile email offline_access accounting.settings accounting.contacts accounting.invoices accounting.banktransactions accounting.payments accounting.manualjournals accounting.journals.read&state=${runtime.oauth.state}"
       }
     },
     "token_exchange": {
@@ -95,6 +98,11 @@
       "body": {
         "template": "grant_type=refresh_token&refresh_token=${auth.refresh_token}"
       }
+    },
+    "test": {
+      "transport_ref": "identity",
+      "method": "GET",
+      "path": "/connections"
     }
   },
   "connection_contract": {
@@ -126,11 +134,25 @@
           "transport_ref": "identity",
           "method": "GET",
           "path": "/connections"
+        },
+        "ui": {
+          "label": "Xero organisation",
+          "help_text": "Choose the Xero organisation this connection syncs. One connection targets exactly one organisation — connect again to sync another.",
+          "widget": "select"
         }
       }
     },
     "required_for_activation": [
       "connection.selections.tenantId"
     ]
+  },
+  "error_map": {
+    "http": {
+      "401": "auth",
+      "429": "rate_limited"
+    }
+  },
+  "concurrency": {
+    "max_connections": 5
   }
 }

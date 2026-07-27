@@ -2,19 +2,29 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "manualjournals",
   "display_name": "Manual Journals",
-  "description": "Manual journals posted directly to the general ledger.",
-  "tags": ["accounting", "journals", "transactions"],
+  "description": "Xero manual journals — double-entry adjustments posted directly to the general ledger. Reads are page-paginated and support incremental sync on UpdatedDateUTC via the If-Modified-Since request header. PUT creates a manual journal; POST creates-or-updates one matched on ManualJournalID (operationId updateOrCreateManualJournals). Xero's where and order query params are deliberately NOT declared — a free-form filter/sort expression can never be populated (no default, no pagination/replication ownership, no meaningful stream operator set) and would only ship dead weight into the request. The unitdp query param does NOT apply to this resource: spec commit 648845e wires unitdp onto exactly six operations (BankTransactions, Invoices, Items, Overpayments, Prepayments, Receipts), and ManualJournalLine carries LineAmount/TaxAmount but no Quantity/UnitAmount for it to act on.",
+  "tags": [
+    "accounting",
+    "journals",
+    "general-ledger"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "ManualJournals",
-        "query": {
-          "page": { "from_param": "page" },
-          "pageSize": { "from_param": "pageSize" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "page": {
+            "from_param": "page"
+          },
+          "pageSize": {
+            "from_param": "pageSize"
+          }
         }
       },
       "params": {
@@ -23,33 +33,50 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "1-based page number."
+          "minimum": 1,
+          "description": "1-based page number; owned by pagination."
         },
         "pageSize": {
           "in": "query",
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "default": 100,
-          "maximum": 1000,
-          "description": "Records per page (max 1000)."
+          "minimum": 1,
+          "description": "Records per page; owned by pagination. Xero documents a default of 100 and states no maximum, so no pagination `max` is declared."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only records created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC)."
         }
       },
       "pagination": {
         "type": "page",
-        "page": { "param": "page", "initial": 1 },
-        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
-        "stop_when": { "empty": { "ref": "response.body.ManualJournals" } }
+        "page": {
+          "param": "page",
+          "initial": 1,
+          "increment_by": 1
+        },
+        "limit": {
+          "param": "pageSize",
+          "default": {
+            "ref": "runtime.batch_size"
+          }
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.ManualJournals"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -60,36 +87,373 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.ManualJournals" },
+        "records": {
+          "ref": "response.body.ManualJournals"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET ManualJournals response",
+          "description": "Xero wraps records in the standard response envelope alongside Id/Status/ProviderName/DateTimeUTC metadata and, on paged resources, a sibling lowercase pagination object; the ManualJournals array carries the records. The earlier PageInfo spelling was reverted upstream and is not used.",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Response envelope: request correlation id."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Response envelope: call status (e.g. OK). Not the per-journal Status field."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Response envelope: the app that made the call."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Response envelope: server timestamp, MS-JSON /Date(...)/ form."
+            },
+            "pagination": {
+              "type": "object",
+              "description": "Page-number pagination envelope returned alongside the records.",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "pageSize": {
+                  "type": "integer"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "itemCount": {
+                  "type": "integer"
+                }
+              }
+            },
             "ManualJournals": {
               "type": "array",
+              "description": "The manual journal records for this page.",
               "items": {
                 "type": "object",
+                "title": "ManualJournal",
+                "required": [
+                  "ManualJournalID",
+                  "Narration",
+                  "Status",
+                  "UpdatedDateUTC"
+                ],
                 "properties": {
-                  "Narration":              { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "JournalLines":           { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Date":                   { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "LineAmountTypes":        { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Status":                 { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Url":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "ShowOnCashBasisReports": { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "HasAttachments":         { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "UpdatedDateUTC":         { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "ManualJournalID":        { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "StatusAttributeString":  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Warnings":               { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "ValidationErrors":       { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Attachments":            { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "ManualJournalID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the manual journal; the resource primary key and the upsert match key."
+                  },
+                  "Narration": {
+                    "type": "string",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Description of the journal being posted — the only property Xero's ManualJournal schema marks Required."
+                  },
+                  "Date": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the journal was posted, MS-JSON date-only envelope (sample /Date(1552521600000+0000)/ = 2019-03-14). Calendar date — no time component, and this resource carries no DateString sibling."
+                  },
+                  "Status": {
+                    "type": "string",
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "DRAFT",
+                      "POSTED",
+                      "DELETED",
+                      "VOIDED",
+                      "ARCHIVED"
+                    ],
+                    "description": "Manual journal status. ARCHIVED was appended to the spec enum by commit 503cb5c."
+                  },
+                  "LineAmountTypes": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "Exclusive",
+                      "Inclusive",
+                      "NoTax"
+                    ],
+                    "description": "How line amounts treat tax."
+                  },
+                  "Url": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Link to a source document — surfaced as 'Go to [appName]' in the Xero app."
+                  },
+                  "ShowOnCashBasisReports": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the journal appears on cash basis reports. Xero defaults it to true when not specified."
+                  },
+                  "HasAttachments": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the manual journal has an attachment. The Attachments array itself is not returned by this collection read — it is served by the item-level /ManualJournals/{ManualJournalID}/Attachments path family — so this flag is the collection-level signal."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp, MS-JSON /Date(1552595972920+0000)/ — UTC-anchored. The replication cursor."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  },
+                  "JournalLines": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Manual journal lines (LineAmount, AccountCode, AccountID, Description, TaxType, TaxAmount, Tracking, IsBlank); surfaced opaque. Every monetary amount on this resource lives inside here and carries no per-field native type, so number:money applies nowhere on ManualJournal."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "ManualJournals",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "ManualJournals": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero manual journal (create)",
+            "description": "One ManualJournal object, wrapped by the request body in Xero's ManualJournals array envelope (a single-element array per request, so the Idempotency-Key header stays authorable — batching and idempotency are mutually exclusive). Only Narration is declared required: it is the sole property Xero's ManualJournal schema marks Required. Server-maintained and read-only members of the read schema (ManualJournalID, UpdatedDateUTC, HasAttachments, StatusAttributeString) are omitted, and summarizeErrors is not declared because it can never be populated.",
+            "type": "object",
+            "required": [
+              "Narration"
+            ],
+            "properties": {
+              "Narration": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Description of the journal being posted."
+              },
+              "JournalLines": {
+                "type": "array",
+                "nullable": true,
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Manual journal lines (LineAmount, AccountCode/AccountID, Description, TaxType, Tracking); passed through opaque."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the journal is posted (calendar date)."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "POSTED",
+                  "DELETED",
+                  "VOIDED",
+                  "ARCHIVED"
+                ],
+                "description": "Manual journal status."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "Url": {
+                "type": "string",
+                "nullable": true,
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document."
+              },
+              "ShowOnCashBasisReports": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the journal appears on cash basis reports; Xero defaults it to true when not specified."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
+          }
+        }
+      },
+      "upsert": {
+        "request": {
+          "method": "POST",
+          "path": "ManualJournals",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "ManualJournals": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "conflict_keys": [
+          "ManualJournalID"
+        ],
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero manual journal (create or update)",
+            "description": "One ManualJournal object carrying the ManualJournalID Xero matches on, wrapped by the request body in the ManualJournals array envelope. POST /ManualJournals is operationId updateOrCreateManualJournals ('Updates or creates a single manual journal'); the item-scoped POST /ManualJournals/{ManualJournalID} is deliberately not used because a per-record id cannot reach path_params. Idempotency is omitted here: the collection POST is matched on the conflict key, so a retry is already convergent. Beyond ManualJournalID and the documented-required Narration, requiredness is not declared.",
+            "type": "object",
+            "required": [
+              "ManualJournalID",
+              "Narration"
+            ],
+            "properties": {
+              "ManualJournalID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the manual journal to match; the upsert conflict key. Xero creates a new manual journal when it does not resolve to an existing one."
+              },
+              "Narration": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Description of the journal being posted."
+              },
+              "JournalLines": {
+                "type": "array",
+                "nullable": true,
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Manual journal lines (LineAmount, AccountCode/AccountID, Description, TaxType, Tracking); passed through opaque."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the journal is posted (calendar date)."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "POSTED",
+                  "DELETED",
+                  "VOIDED",
+                  "ARCHIVED"
+                ],
+                "description": "Manual journal status; set VOIDED or DELETED to void/delete an existing journal."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "Url": {
+                "type": "string",
+                "nullable": true,
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document."
+              },
+              "ShowOnCashBasisReports": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the journal appears on cash basis reports."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }

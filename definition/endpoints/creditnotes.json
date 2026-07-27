@@ -2,19 +2,33 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "creditnotes",
   "display_name": "Credit Notes",
-  "description": "Credit notes against sales and purchase invoices.",
-  "tags": ["accounting", "transactions"],
+  "description": "Xero credit notes — both ACCRECCREDIT (customer credit notes against sales invoices) and ACCPAYCREDIT (supplier credit notes against bills). Reads are page-paginated and support incremental sync on UpdatedDateUTC via the If-Modified-Since request header. PUT creates a credit note; POST creates-or-updates one matched on CreditNoteID.",
+  "tags": [
+    "accounting",
+    "credit-notes",
+    "receivables",
+    "payables"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "CreditNotes",
-        "query": {
-          "page": { "from_param": "page" },
-          "pageSize": { "from_param": "pageSize" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "page": {
+            "from_param": "page"
+          },
+          "pageSize": {
+            "from_param": "pageSize"
+          },
+          "unitdp": {
+            "from_param": "unitdp"
+          }
         }
       },
       "params": {
@@ -23,33 +37,59 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "1-based page number."
+          "minimum": 1,
+          "description": "1-based page number; owned by pagination. Xero documents up to 100 credit notes per call."
         },
         "pageSize": {
           "in": "query",
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "default": 100,
-          "maximum": 1000,
-          "description": "Records per page (max 1000)."
+          "minimum": 1,
+          "description": "Records per page; owned by pagination. Xero documents a default of 100 and states no maximum, so no pagination `max` is declared."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only records created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC)."
+        },
+        "unitdp": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "default": {
+            "literal": 4
+          },
+          "description": "Unit decimal places. unitdp=4 opts in to four-decimal unit amounts inside the opaque LineItems; without it Xero rounds them to 2dp. Does not affect the top-level SubTotal/TotalTax/Total."
         }
       },
       "pagination": {
         "type": "page",
-        "page": { "param": "page", "initial": 1 },
-        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
-        "stop_when": { "empty": { "ref": "response.body.CreditNotes" } }
+        "page": {
+          "param": "page",
+          "initial": 1,
+          "increment_by": 1
+        },
+        "limit": {
+          "param": "pageSize",
+          "default": {
+            "ref": "runtime.batch_size"
+          }
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.CreditNotes"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -60,53 +100,633 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.CreditNotes" },
+        "records": {
+          "ref": "response.body.CreditNotes"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET CreditNotes response",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Response envelope: request correlation id."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Response envelope: call status (e.g. OK). Not the per-credit-note Status field."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Response envelope: the app that made the call."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Response envelope: server timestamp, MS-JSON /Date(...)/ form."
+            },
+            "pagination": {
+              "type": "object",
+              "description": "Page-number pagination envelope returned alongside the records.",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "pageSize": {
+                  "type": "integer"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "itemCount": {
+                  "type": "integer"
+                }
+              }
+            },
             "CreditNotes": {
               "type": "array",
+              "description": "The credit note records for this page.",
               "items": {
                 "type": "object",
+                "title": "CreditNote",
+                "required": [
+                  "CreditNoteID"
+                ],
                 "properties": {
-                  "Type":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Contact":               { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Date":                  { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "DueDate":               { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "Status":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "LineAmountTypes":       { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "LineItems":             { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "SubTotal":              { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "TotalTax":              { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Total":                 { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "CISDeduction":          { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "CISRate":               { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "UpdatedDateUTC":        { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CurrencyCode":          { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "FullyPaidOnDate":       { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CreditNoteID":          { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "CreditNoteNumber":      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Reference":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "SentToContact":         { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "CurrencyRate":          { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "RemainingCredit":       { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Allocations":           { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "AppliedAmount":         { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Payments":              { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "BrandingThemeID":       { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "StatusAttributeString": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "HasAttachments":        { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "HasErrors":             { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "ValidationErrors":      { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Warnings":              { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "InvoiceAddresses":      { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "CreditNoteID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": false,
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the credit note, e.g. aea95d78-ea48-456b-9b08-6bc012600072; the resource primary key."
+                  },
+                  "CreditNoteNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Customer-visible credit note number, e.g. CN-0002. A viable alternate natural key, but Xero does not document it as the upsert match key."
+                  },
+                  "Type": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "ACCPAYCREDIT",
+                      "ACCRECCREDIT"
+                    ],
+                    "description": "Credit note type — ACCPAYCREDIT (against a supplier bill) or ACCRECCREDIT (against a customer invoice)."
+                  },
+                  "Reference": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Additional reference number (ACCRECCREDIT only)."
+                  },
+                  "Contact": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Contact the credit note is against; surfaced opaque."
+                  },
+                  "Date": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the credit note is issued, MS-JSON date-only envelope (e.g. /Date(1481846400000+0000)/). Calendar date — no time component."
+                  },
+                  "DueDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the credit note is due, MS-JSON date-only envelope (e.g. /Date(1486425600000+0000)/). Calendar date — no time component."
+                  },
+                  "FullyPaidOnDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the credit note was fully allocated or refunded, MS-JSON date-only envelope. Calendar date — no time component."
+                  },
+                  "Status": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "DRAFT",
+                      "SUBMITTED",
+                      "DELETED",
+                      "AUTHORISED",
+                      "PAID",
+                      "VOIDED"
+                    ],
+                    "description": "Credit note status."
+                  },
+                  "LineAmountTypes": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "Exclusive",
+                      "Inclusive",
+                      "NoTax"
+                    ],
+                    "description": "How line amounts treat tax."
+                  },
+                  "LineItems": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Line items; surfaced opaque. UnitAmount/LineAmount/TaxAmount live inside and are not separately typed."
+                  },
+                  "SubTotal": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total of the credit note excluding taxes."
+                  },
+                  "TotalTax": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total tax on the credit note."
+                  },
+                  "Total": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total of the credit note including taxes."
+                  },
+                  "CISDeduction": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "CIS deduction amount withheld. UK organisations only."
+                  },
+                  "CISRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "CIS deduction rate applied — a percentage, not money, so it stays Float64 rather than being rounded to 4dp. UK organisations only."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp, MS-JSON /Date(1290168061547+0000)/ — UTC-anchored per that sample. The replication cursor."
+                  },
+                  "CurrencyCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "iso-4217",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Xero CurrencyCode enum (~151 ISO-4217 members incl. retired codes), e.g. NZD; typed as an open string rather than inlining the full domain."
+                  },
+                  "CurrencyRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "Exchange rate to the base currency (a ratio, e.g. 1.000000) — not money, so it stays Float64 rather than being rounded to 4dp."
+                  },
+                  "SentToContact": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the credit note has been sent to the contact via the Xero app."
+                  },
+                  "RemainingCredit": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Credit remaining on the credit note after allocations and refunds."
+                  },
+                  "Allocations": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Allocations of this credit note against invoices/bills; surfaced opaque."
+                  },
+                  "AppliedAmount": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Amount of the credit note applied."
+                  },
+                  "Payments": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Payments (refunds) against the credit note; surfaced opaque."
+                  },
+                  "BrandingThemeID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier of the branding theme applied to the credit note."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  },
+                  "HasAttachments": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the credit note has attachments."
+                  },
+                  "HasErrors": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the credit note has validation errors."
+                  },
+                  "InvoiceAddresses": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Invoice addresses associated with the credit note; surfaced opaque."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "CreditNotes",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "CreditNotes": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero credit note (create)",
+            "description": "One credit note, wrapped by the request in Xero's CreditNotes array envelope. Server-computed fields (SubTotal/TotalTax/Total, CISDeduction/CISRate, RemainingCredit, AppliedAmount, Allocations, Payments, UpdatedDateUTC, HasAttachments, HasErrors, InvoiceAddresses, StatusAttributeString) are omitted — they are maintained by Xero, not supplied on create.",
+            "type": "object",
+            "required": [
+              "Type",
+              "Contact",
+              "LineItems"
+            ],
+            "properties": {
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "ACCPAYCREDIT",
+                  "ACCRECCREDIT"
+                ],
+                "description": "Credit note type — ACCPAYCREDIT (against a supplier bill) or ACCRECCREDIT (against a customer invoice)."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the credit note is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque. Unit amounts honour the unitdp query param."
+              },
+              "CreditNoteNumber": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Customer-visible credit note number, e.g. CN-0002. Xero auto-generates one when omitted."
+              },
+              "Reference": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Additional reference number (ACCRECCREDIT only)."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the credit note is issued (calendar date). Defaults to the current date when omitted."
+              },
+              "DueDate": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the credit note is due (calendar date)."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "SUBMITTED",
+                  "DELETED",
+                  "AUTHORISED",
+                  "PAID",
+                  "VOIDED"
+                ],
+                "description": "Credit note status."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "nullable": true,
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the credit note, e.g. NZD."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "nullable": true,
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency."
+              },
+              "BrandingThemeID": {
+                "type": "string",
+                "nullable": true,
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the branding theme to apply."
+              },
+              "SentToContact": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the credit note has been sent to the contact via the Xero app."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
+          }
+        }
+      },
+      "upsert": {
+        "request": {
+          "method": "POST",
+          "path": "CreditNotes",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "CreditNotes": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "conflict_keys": [
+          "CreditNoteID"
+        ],
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero credit note (create or update)",
+            "description": "One credit note, wrapped by the request in Xero's CreditNotes array envelope. Xero matches on CreditNoteID and creates a new credit note when it does not resolve to an existing one. Server-computed fields are omitted.",
+            "type": "object",
+            "required": [
+              "CreditNoteID",
+              "Type",
+              "Contact",
+              "LineItems"
+            ],
+            "properties": {
+              "CreditNoteID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the credit note to match; the upsert conflict key. Grounded from the item route POST CreditNotes/{CreditNoteID}. Xero creates a new credit note when it does not resolve to an existing one."
+              },
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "ACCPAYCREDIT",
+                  "ACCRECCREDIT"
+                ],
+                "description": "Credit note type — ACCPAYCREDIT (against a supplier bill) or ACCRECCREDIT (against a customer invoice)."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the credit note is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque. Unit amounts honour the unitdp query param."
+              },
+              "CreditNoteNumber": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Customer-visible credit note number, e.g. CN-0002. A viable alternate natural key, but Xero does not document it as the upsert match key, so it is deliberately not a conflict key."
+              },
+              "Reference": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Additional reference number (ACCRECCREDIT only)."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the credit note is issued (calendar date)."
+              },
+              "DueDate": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the credit note is due (calendar date)."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "SUBMITTED",
+                  "DELETED",
+                  "AUTHORISED",
+                  "PAID",
+                  "VOIDED"
+                ],
+                "description": "Credit note status; set VOIDED or DELETED to void/delete an existing credit note."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "nullable": true,
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the credit note, e.g. NZD."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "nullable": true,
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency."
+              },
+              "BrandingThemeID": {
+                "type": "string",
+                "nullable": true,
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the branding theme to apply."
+              },
+              "SentToContact": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the credit note has been sent to the contact via the Xero app."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }

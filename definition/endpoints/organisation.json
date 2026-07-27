@@ -2,7 +2,7 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "organisation",
   "display_name": "Organisation",
-  "description": "Organisation settings and metadata (single record for the connected tenant).",
+  "description": "Settings and metadata for the connected Xero organisation — legal name, base currency, country, financial year end, sales tax basis and period, timezone, subscription class/edition, and the period/end-of-year lock dates. Read-only and single-row: GET Organisation returns exactly one record, for the tenant named by the transport's Xero-tenant-id header. No pagination is authored — Xero documents none on this resource and the response carries no pagination envelope. No replication block: the Organisation model exposes CreatedDateUTC only and has no UpdatedDateUTC or any other watermark (confirmed against all three generated Xero SDKs, and against the 2026-07-13 spec commit that added UpdatedDateUTCString to CreditNote/Invoice/Overpayment/Payment/Prepayment but deliberately not to Organisation), so incremental sync is not expressible and full_refresh is the only method; no If-Modified-Since param is declared. No write operations: Xero exposes neither PUT Organisation nor POST Organisation. Two deliberate shape notes. (1) The singular/plural asymmetry is real and is Xero's own — the request path is Organisation but the records come back under an Organisations array; neither side is a typo and neither was 'corrected'. (2) The provider's APIKey property is intentionally absent from response.schema: it is a live per-organisation credential (the Xero-to-Xero document-exchange key), it carries no analytical value, and the api-endpoint contract offers no field-level secret or masking affordance for a response field — authoring it would replicate a working credential into the destination warehouse in plaintext, where backups and downstream copies make the exposure irreversible. Every other Organisation property is surfaced.",
   "tags": ["accounting", "settings"],
   "operations": {
     "read": {
@@ -13,50 +13,254 @@
       "response": {
         "records": { "ref": "response.body.Organisations" },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET Organisation response",
+          "description": "Xero wraps records in the standard response envelope alongside Id/Status/ProviderName/DateTimeUTC metadata; the Organisations array carries the records. It always holds exactly one element — the tenant selected by connection.selections.tenantId.",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": { "type": "string", "description": "Envelope: request correlation id assigned by Xero." },
+            "Status": { "type": "string", "description": "Envelope: request status, 'OK' on success. Not the per-organisation OrganisationStatus field." },
+            "ProviderName": { "type": "string", "description": "Envelope: the name of the calling Xero app." },
+            "DateTimeUTC": { "type": "string", "description": "Envelope: response timestamp in Xero MS-JSON form, e.g. /Date(1550797359081)/." },
             "Organisations": {
               "type": "array",
+              "description": "The record collection. Always a single-element array on this resource.",
               "items": {
                 "type": "object",
+                "title": "Organisation",
                 "properties": {
-                  "OrganisationID":               { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "APIKey":                       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Name":                         { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "LegalName":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "PaysTax":                      { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "Version":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "OrganisationType":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "BaseCurrency":                 { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "CountryCode":                  { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "IsDemoCompany":                { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "OrganisationStatus":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "RegistrationNumber":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "EmployerIdentificationNumber": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "TaxNumber":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "FinancialYearEndDay":          { "type": "integer", "native_type": "Integer",  "arrow_type": "Int64" },
-                  "FinancialYearEndMonth":        { "type": "integer", "native_type": "Integer",  "arrow_type": "Int64" },
-                  "SalesTaxBasis":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "SalesTaxPeriod":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "DefaultSalesTax":              { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "DefaultPurchasesTax":          { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "PeriodLockDate":               { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "EndOfYearLockDate":            { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CreatedDateUTC":               { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "Timezone":                     { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "OrganisationEntityType":       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "ShortCode":                    { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Class":                        { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Edition":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "LineOfBusiness":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Addresses":                    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Phones":                       { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "ExternalLinks":                { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "PaymentTerms":                 { "type": "object",  "native_type": "Json",     "arrow_type": "Json" }
+                  "OrganisationID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": false,
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the organisation, and the primary key of this resource. The spec marks no Organisation property required; this one is kept non-null as the documented unique identifier."
+                  },
+                  "Name": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Display name of the organisation, e.g. Sweet Xero org."
+                  },
+                  "LegalName": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Registered legal name, e.g. V Sweet Xero Org."
+                  },
+                  "PaysTax": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the organisation is registered with a local tax authority."
+                  },
+                  "Version": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["AU", "NZ", "GLOBAL", "UK", "US", "AUONRAMP", "NZONRAMP", "GLOBALONRAMP", "UKONRAMP", "USONRAMP"],
+                    "description": "Regional version of Xero the organisation runs, e.g. AU."
+                  },
+                  "OrganisationType": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["ACCOUNTING_PRACTICE", "COMPANY", "CHARITY", "CLUB_OR_SOCIETY", "INDIVIDUAL", "LOOK_THROUGH_COMPANY", "NOT_FOR_PROFIT", "PARTNERSHIP", "S_CORPORATION", "SELF_MANAGED_SUPERANNUATION_FUND", "SOLE_TRADER", "SUPERANNUATION_FUND", "TRUST", "PERSONAL", "SINGLEMEMBERLLC", "CCORPORATIONLLC", "PARTNERSHIPLLC", "SCORPORATIONLLC", "LLC", "NOTLLC", "UNSPECIFIED"],
+                    "description": "Organisation type, e.g. COMPANY. Same value domain as OrganisationEntityType."
+                  },
+                  "BaseCurrency": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Default currency of the organisation as an ISO-4217 code, e.g. AUD. The spec closes this domain but at 130+ members; surfaced as an open string since the arrow type is Utf8 either way."
+                  },
+                  "CountryCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Country of the organisation as an ISO-3166 alpha-2 code, e.g. AU. Closed in the spec but at 250-odd members; surfaced as an open string."
+                  },
+                  "IsDemoCompany": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether this is a Xero demo company rather than a real organisation."
+                  },
+                  "OrganisationStatus": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Status of the organisation, e.g. ACTIVE. NOT a closed enum in the spec — generated as a bare string in all three Xero SDKs, so no value domain is declared rather than guessing one."
+                  },
+                  "RegistrationNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Company registration number. Only available for NZ, AU and UK organisations."
+                  },
+                  "EmployerIdentificationNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Employer identification number. US-only."
+                  },
+                  "TaxNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Local tax number — ABN, GST number, VAT number and so on, depending on Version."
+                  },
+                  "FinancialYearEndDay": {
+                    "type": "integer",
+                    "nullable": true,
+                    "native_type": "integer",
+                    "arrow_type": "Int64",
+                    "description": "Calendar day the financial year ends on, e.g. 30."
+                  },
+                  "FinancialYearEndMonth": {
+                    "type": "integer",
+                    "nullable": true,
+                    "native_type": "integer",
+                    "arrow_type": "Int64",
+                    "description": "Calendar month the financial year ends in, 1-12, e.g. 6."
+                  },
+                  "SalesTaxBasis": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["PAYMENTS", "INVOICE", "NONE", "CASH", "ACCRUAL", "FLATRATECASH", "FLATRATEACCRUAL", "ACCRUALS"],
+                    "description": "Basis on which sales tax is reported, e.g. ACCRUALS. The domain is region-dependent; both ACCRUAL and ACCRUALS are live members."
+                  },
+                  "SalesTaxPeriod": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["MONTHLY", "QUARTERLY1", "QUARTERLY2", "QUARTERLY3", "ANNUALLY", "ONEMONTHS", "TWOMONTHS", "SIXMONTHS", "1MONTHLY", "2MONTHLY", "3MONTHLY", "6MONTHLY", "QUARTERLY", "YEARLY", "NONE"],
+                    "description": "Frequency of sales tax reporting, e.g. QUARTERLY1. The digit-prefixed (1MONTHLY) and spelled-out (ONEMONTHS) variants are BOTH live in the spec and are deliberately not de-duplicated."
+                  },
+                  "DefaultSalesTax": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Default sales tax setting as a human display string, e.g. 'Tax Exclusive'. NOT a LineAmountTypes token — do not join it to line-amount enums."
+                  },
+                  "DefaultPurchasesTax": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Default purchases tax setting as a human display string, e.g. 'Tax Inclusive'."
+                  },
+                  "PeriodLockDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date up to which the accounts are locked for non-advisers, in the Xero MS-JSON date-only envelope (e.g. /Date(1481846400000+0000)/). Calendar date, no time component. Shown only if set."
+                  },
+                  "EndOfYearLockDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date up to which the accounts are locked for all users, in the Xero MS-JSON date-only envelope. Calendar date, no time component. Shown only if set."
+                  },
+                  "CreatedDateUTC": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Timestamp the organisation was created in Xero, MS-JSON form with a time component, e.g. /Date(1572552096000)/. Zone-aware per that sample (Xero states a zoneless MS-JSON value is UTC). This is the only temporal watermark on the resource, and Xero exposes no filter param for it, so it is NOT usable as a replication cursor."
+                  },
+                  "Timezone": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Xero timezone token for the organisation, e.g. AUSEASTERNSTANDARDTIME. Closed in the spec but at 100+ members; surfaced as an open string. Not an IANA zone name."
+                  },
+                  "OrganisationEntityType": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["ACCOUNTING_PRACTICE", "COMPANY", "CHARITY", "CLUB_OR_SOCIETY", "INDIVIDUAL", "LOOK_THROUGH_COMPANY", "NOT_FOR_PROFIT", "PARTNERSHIP", "S_CORPORATION", "SELF_MANAGED_SUPERANNUATION_FUND", "SOLE_TRADER", "SUPERANNUATION_FUND", "TRUST", "PERSONAL", "SINGLEMEMBERLLC", "CCORPORATIONLLC", "PARTNERSHIPLLC", "SCORPORATIONLLC", "LLC", "NOTLLC", "UNSPECIFIED"],
+                    "description": "Entity type of the organisation, e.g. COMPANY. Shares the OrganisationType value domain and usually agrees with it."
+                  },
+                  "ShortCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Short code identifying the organisation in Xero's practice-management URLs, e.g. !v9Mrp."
+                  },
+                  "Class": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["DEMO", "TRIAL", "STARTER", "STANDARD", "PREMIUM", "PREMIUM_20", "PREMIUM_50", "PREMIUM_100", "LEDGER", "GST_CASHBOOK", "NON_GST_CASHBOOK", "ULTIMATE", "LITE", "ULTIMATE_10", "ULTIMATE_20", "ULTIMATE_50", "ULTIMATE_100", "IGNITE", "GROW", "COMPREHENSIVE", "SIMPLE", "BASICLITE", "ULTRA"],
+                    "description": "Subscription class of the organisation, e.g. PREMIUM. Domain current as of 2026-07; BASICLITE and ULTRA verified against the 2026-05 and 2026-04 spec commits. Xero adds members here over time — treat as append-only."
+                  },
+                  "Edition": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": ["BUSINESS", "PARTNER"],
+                    "description": "Edition of the organisation, e.g. BUSINESS."
+                  },
+                  "LineOfBusiness": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Free-text description of the organisation's line of business."
+                  },
+                  "Addresses": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Address details of the organisation (POBOX / STREET / DELIVERY entries); surfaced opaque."
+                  },
+                  "Phones": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Phone details of the organisation (DEFAULT / DDI / MOBILE / FAX entries); surfaced opaque."
+                  },
+                  "ExternalLinks": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Organisation website and social-media links; surfaced opaque."
+                  },
+                  "PaymentTerms": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Default bill and sales payment terms (Day + Type per side); surfaced opaque."
+                  }
                 }
               }
             }

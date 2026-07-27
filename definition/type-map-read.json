@@ -1,9 +1,15 @@
 [
-  { "match": "exact", "native": "String",   "canonical": "Utf8" },
-  { "match": "exact", "native": "UUID",     "canonical": "Utf8" },
-  { "match": "exact", "native": "DateTime", "canonical": "Utf8" },
-  { "match": "exact", "native": "Boolean",  "canonical": "Boolean" },
-  { "match": "exact", "native": "Integer",  "canonical": "Int64" },
-  { "match": "exact", "native": "Decimal",  "canonical": "Float64" },
-  { "match": "exact", "native": "Json",     "canonical": "Json" }
+  { "match": "exact", "native": "STRING",                 "canonical": "Utf8" },
+  { "match": "exact", "native": "STRING:UUID",            "canonical": "Utf8" },
+  { "match": "exact", "native": "STRING:ENUM",            "canonical": "Utf8" },
+  { "match": "exact", "native": "STRING:DATE-TIME",       "canonical": "Timestamp(MICROSECOND, UTC)" },
+  { "match": "exact", "native": "STRING:DATE-TIME-NAIVE", "canonical": "Timestamp(MICROSECOND)" },
+  { "match": "exact", "native": "MSDATE-TIME",            "canonical": "Timestamp(MILLISECOND, UTC)" },
+  { "match": "exact", "native": "MSDATE",                 "canonical": "Date32" },
+  { "match": "exact", "native": "INTEGER",                "canonical": "Int64" },
+  { "match": "exact", "native": "NUMBER:MONEY",           "canonical": "Decimal128(19, 4)" },
+  { "match": "exact", "native": "NUMBER",                 "canonical": "Float64" },
+  { "match": "exact", "native": "BOOLEAN",                "canonical": "Boolean" },
+  { "match": "exact", "native": "ARRAY",                  "canonical": "Json" },
+  { "match": "exact", "native": "OBJECT",                 "canonical": "Json" }
 ]
