@@ -2,19 +2,32 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "banktransactions",
   "display_name": "Bank Transactions",
-  "description": "Spend and receive money bank transactions (not transfers, not bank statement lines).",
-  "tags": ["accounting", "transactions"],
+  "description": "Xero bank transactions — spend and receive money, including over-payments, prepayments and bank transfers (not bank statement lines). Reads are page-paginated and support incremental sync on UpdatedDateUTC via the If-Modified-Since request header. PUT creates a transaction; POST creates-or-updates one matched on BankTransactionID.",
+  "tags": [
+    "accounting",
+    "banking",
+    "transactions"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "BankTransactions",
-        "query": {
-          "page": { "from_param": "page" },
-          "pageSize": { "from_param": "pageSize" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "page": {
+            "from_param": "page"
+          },
+          "pageSize": {
+            "from_param": "pageSize"
+          },
+          "unitdp": {
+            "from_param": "unitdp"
+          }
         }
       },
       "params": {
@@ -23,33 +36,59 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "1-based page number."
+          "minimum": 1,
+          "description": "1-based page number; owned by pagination."
         },
         "pageSize": {
           "in": "query",
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "default": 100,
-          "maximum": 1000,
-          "description": "Records per page (max 1000)."
+          "minimum": 1,
+          "description": "Records per page; owned by pagination. Xero documents a default of 100 and states no maximum, so no pagination `max` is declared."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only records created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC)."
+        },
+        "unitdp": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "default": {
+            "literal": 4
+          },
+          "description": "Unit decimal places. unitdp=4 opts in to four-decimal unit amounts inside the opaque LineItems; without it Xero rounds them to 2dp. Does not affect the top-level SubTotal/TotalTax/Total."
         }
       },
       "pagination": {
         "type": "page",
-        "page": { "param": "page", "initial": 1 },
-        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
-        "stop_when": { "empty": { "ref": "response.body.BankTransactions" } }
+        "page": {
+          "param": "page",
+          "initial": 1,
+          "increment_by": 1
+        },
+        "limit": {
+          "param": "pageSize",
+          "default": {
+            "ref": "runtime.batch_size"
+          }
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.BankTransactions"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -60,44 +99,577 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.BankTransactions" },
+        "records": {
+          "ref": "response.body.BankTransactions"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET BankTransactions response",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Response envelope: request correlation id."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Response envelope: call status (e.g. OK)."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Response envelope: the app that made the call."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Response envelope: server timestamp, MS-JSON /Date(...)/ form."
+            },
+            "pagination": {
+              "type": "object",
+              "description": "Page-number pagination envelope returned alongside the records.",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "pageSize": {
+                  "type": "integer"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "itemCount": {
+                  "type": "integer"
+                }
+              }
+            },
             "BankTransactions": {
               "type": "array",
+              "description": "The bank transaction records for this page.",
               "items": {
                 "type": "object",
+                "required": [
+                  "BankTransactionID",
+                  "Type",
+                  "LineItems",
+                  "BankAccount",
+                  "UpdatedDateUTC"
+                ],
                 "properties": {
-                  "Type":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Contact":               { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "LineItems":             { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "BankAccount":           { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "IsReconciled":          { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "Date":                  { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "Reference":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "CurrencyCode":          { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "CurrencyRate":          { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Url":                   { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Status":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "LineAmountTypes":       { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "SubTotal":              { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "TotalTax":              { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Total":                 { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "BankTransactionID":     { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "PrepaymentID":          { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "OverpaymentID":         { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "UpdatedDateUTC":        { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "HasAttachments":        { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "StatusAttributeString": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "ValidationErrors":      { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "BankTransactionID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the bank transaction; the resource primary key."
+                  },
+                  "Type": {
+                    "type": "string",
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "RECEIVE",
+                      "RECEIVE-OVERPAYMENT",
+                      "RECEIVE-PREPAYMENT",
+                      "SPEND",
+                      "SPEND-OVERPAYMENT",
+                      "SPEND-PREPAYMENT",
+                      "RECEIVE-TRANSFER",
+                      "SPEND-TRANSFER"
+                    ],
+                    "description": "Transaction type."
+                  },
+                  "Contact": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Contact the transaction is against; surfaced opaque."
+                  },
+                  "LineItems": {
+                    "type": "array",
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Line items; surfaced opaque. UnitAmount/LineAmount/TaxAmount live inside and are not separately typed."
+                  },
+                  "BankAccount": {
+                    "type": "object",
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Bank account the transaction belongs to; surfaced opaque."
+                  },
+                  "IsReconciled": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the transaction is reconciled. Top level is a real JSON boolean (the nested BatchPayment copy is a string)."
+                  },
+                  "Date": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Transaction date, MS-JSON date-only envelope (e.g. /Date(1476316800000+0000)/). Calendar date — no time component."
+                  },
+                  "Reference": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Reference for the transaction (SPEND/RECEIVE only)."
+                  },
+                  "CurrencyCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "iso-4217",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Xero CurrencyCode enum (~160 ISO-4217 members incl. retired BYR/EEK/LTL/LVL/SKK/ZWD); typed as an open string rather than inlining the full domain."
+                  },
+                  "CurrencyRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "Exchange rate to the base currency (a ratio, e.g. 0.7500) — not money, so it stays Float64 rather than being rounded to 4dp."
+                  },
+                  "Url": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Link to a source document."
+                  },
+                  "Status": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "AUTHORISED",
+                      "DELETED",
+                      "VOIDED"
+                    ],
+                    "description": "Transaction status."
+                  },
+                  "LineAmountTypes": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "Exclusive",
+                      "Inclusive",
+                      "NoTax"
+                    ],
+                    "description": "How line amounts treat tax."
+                  },
+                  "SubTotal": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total excluding tax."
+                  },
+                  "TotalTax": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total tax."
+                  },
+                  "Total": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total including tax."
+                  },
+                  "PrepaymentID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero-assigned prepayment id, present on SPEND-PREPAYMENT / RECEIVE-PREPAYMENT."
+                  },
+                  "OverpaymentID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero-assigned overpayment id, present on SPEND-OVERPAYMENT / RECEIVE-OVERPAYMENT."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp, MS-JSON /Date(1476389616437+0000)/ — UTC-anchored. The replication cursor."
+                  },
+                  "HasAttachments": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the transaction has attachments."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  },
+                  "BatchPayment": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Batch payment the transaction belongs to; surfaced opaque — its TotalAmount and IsReconciled come back as JSON strings, so it must not be descended into."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "BankTransactions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "BankTransactions": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero bank transaction (create)",
+            "type": "object",
+            "required": [
+              "Type",
+              "Contact",
+              "LineItems",
+              "BankAccount"
+            ],
+            "properties": {
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "RECEIVE",
+                  "RECEIVE-OVERPAYMENT",
+                  "RECEIVE-PREPAYMENT",
+                  "SPEND",
+                  "SPEND-OVERPAYMENT",
+                  "SPEND-PREPAYMENT",
+                  "RECEIVE-TRANSFER",
+                  "SPEND-TRANSFER"
+                ],
+                "description": "Transaction type."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the transaction is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque."
+              },
+              "BankAccount": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Target bank account (AccountID or Code); passed through opaque."
+              },
+              "IsReconciled": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the transaction is reconciled."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Transaction date (calendar date)."
+              },
+              "Reference": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Reference for the transaction (SPEND/RECEIVE only)."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "nullable": true,
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the transaction."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "nullable": true,
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency."
+              },
+              "Url": {
+                "type": "string",
+                "nullable": true,
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "AUTHORISED",
+                  "DELETED",
+                  "VOIDED"
+                ],
+                "description": "Transaction status."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
+          }
+        }
+      },
+      "upsert": {
+        "request": {
+          "method": "POST",
+          "path": "BankTransactions",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "BankTransactions": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "conflict_keys": [
+          "BankTransactionID"
+        ],
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero bank transaction (create or update)",
+            "type": "object",
+            "required": [
+              "BankTransactionID",
+              "Type",
+              "Contact",
+              "LineItems",
+              "BankAccount"
+            ],
+            "properties": {
+              "BankTransactionID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the transaction to match; the upsert conflict key. Xero creates a new transaction when it does not resolve to an existing one."
+              },
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "RECEIVE",
+                  "RECEIVE-OVERPAYMENT",
+                  "RECEIVE-PREPAYMENT",
+                  "SPEND",
+                  "SPEND-OVERPAYMENT",
+                  "SPEND-PREPAYMENT",
+                  "RECEIVE-TRANSFER",
+                  "SPEND-TRANSFER"
+                ],
+                "description": "Transaction type."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the transaction is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque."
+              },
+              "BankAccount": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Target bank account (AccountID or Code); passed through opaque."
+              },
+              "IsReconciled": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the transaction is reconciled."
+              },
+              "Date": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Transaction date (calendar date)."
+              },
+              "Reference": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Reference for the transaction (SPEND/RECEIVE only)."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "nullable": true,
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the transaction."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "nullable": true,
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency."
+              },
+              "Url": {
+                "type": "string",
+                "nullable": true,
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document."
+              },
+              "Status": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "AUTHORISED",
+                  "DELETED",
+                  "VOIDED"
+                ],
+                "description": "Transaction status; set VOIDED or DELETED to void/delete an existing transaction."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }

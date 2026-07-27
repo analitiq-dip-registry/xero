@@ -2,18 +2,26 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "journals",
   "display_name": "Journals",
-  "description": "Immutable accounting journals (the general ledger), one per posted transaction line set.",
-  "tags": ["accounting", "journals"],
+  "description": "Xero journals — the general ledger. One journal per posted transaction, carrying its JournalLines. READ-ONLY: Xero exposes only GET Journals (plus the item-level GET Journals/{JournalID} and GET Journals/{JournalNumber}) with no PUT or POST, and the resource's only scope is accounting.journals.read, so no write modes are authored. This resource is the connector's PAGINATION exception: it is keyset-paginated on the offset query param, which is advanced to the highest JournalNumber in the previous batch (Xero returns journals whose JournalNumber is greater than the offset) and stops when the Journals array comes back empty. There is no page/pageSize on this resource and no sibling pagination envelope; no first-party source states the fixed batch size, so no pagination limit is declared — the max-JournalNumber advance rule is self-correcting and does not need one. It is also the REPLICATION exception: the Journal model has no UpdatedDateUTC, so the cursor is CreatedDateUTC, sent through the If-Modified-Since request header.",
+  "tags": [
+    "accounting",
+    "journals",
+    "general-ledger"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "Journals",
-        "query": {
-          "offset": { "from_param": "offset" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "offset": {
+            "from_param": "offset"
+          }
         }
       },
       "params": {
@@ -22,23 +30,35 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "Return journals with JournalNumber greater than this value."
+          "minimum": 0,
+          "description": "Keyset cursor: Xero returns journals with a JournalNumber greater than this value. Owned by pagination, which advances it to the maximum JournalNumber in the previous batch. Omitted on the first request so the sync starts at the beginning of the ledger."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only journals created at or after are returned."
+          "description": "Xero returns only records created at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication; the cursor is CreatedDateUTC because the Journal model carries no UpdatedDateUTC."
         }
       },
       "pagination": {
         "type": "keyset",
-        "keyset": { "param": "offset", "order_by_field": "JournalNumber" },
-        "stop_when": { "empty": { "ref": "response.body.Journals" } }
+        "keyset": {
+          "param": "offset",
+          "order_by_field": "JournalNumber"
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.Journals"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "CreatedDateUTC",
@@ -49,27 +69,123 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.Journals" },
+        "records": {
+          "ref": "response.body.Journals"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET Journals response",
+          "description": "Xero wraps records in the standard response envelope alongside Id/Status/ProviderName/DateTimeUTC metadata; the Journals array carries the records. Unlike the page-paginated Xero resources there is NO sibling pagination object here — consistent with the keyset model.",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Envelope: request correlation id assigned by Xero."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Envelope: request status, 'OK' on success."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Envelope: the name of the calling Xero app."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Envelope: response timestamp in Xero MS-JSON form, e.g. /Date(1550797359081)/."
+            },
             "Journals": {
               "type": "array",
+              "description": "The journal records for this batch, ordered by JournalNumber.",
               "items": {
                 "type": "object",
+                "title": "Journal",
                 "properties": {
-                  "JournalID":      { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "JournalDate":    { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "JournalNumber":  { "type": "integer", "native_type": "Integer",  "arrow_type": "Int64" },
-                  "CreatedDateUTC": { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "Reference":      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "SourceID":       { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "SourceType":     { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "JournalLines":   { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "JournalID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the journal, e.g. 1b31feeb-aa23-404c-8c19-24c827c53661. Optional in every first-party generator, hence nullable."
+                  },
+                  "JournalDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the journal was posted, MS-JSON date-only envelope (e.g. /Date(1539993600000+0000)/ — exact midnight). A calendar date with no time component: xero-python types it date[ms-format] and xero-ruby documents it as Date. There is no JournalDateString sibling on this resource."
+                  },
+                  "JournalNumber": {
+                    "type": "integer",
+                    "nullable": true,
+                    "native_type": "integer",
+                    "arrow_type": "Int64",
+                    "description": "Monotonic journal sequence number and the keyset ordering key that drives the offset param. Originally mis-declared as a string in the Xero OpenAPI spec and corrected to an integer. A missing value is a terminal condition for the page loop — never assume 0."
+                  },
+                  "CreatedDateUTC": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Created timestamp in Xero MS-JSON form with an explicit offset, e.g. /Date(1541176243467+0000)/ = 2018-11-02T15:10:43.467Z. Zone-aware per that sample. The replication cursor — journals are immutable and the model has no UpdatedDateUTC."
+                  },
+                  "Reference": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Reference of the source transaction, e.g. Red Fish, Blue Fish."
+                  },
+                  "SourceID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier of the transaction that produced this journal (invoice, payment, bank transaction, …)."
+                  },
+                  "SourceType": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "ACCREC",
+                      "ACCPAY",
+                      "ACCRECCREDIT",
+                      "ACCPAYCREDIT",
+                      "ACCRECPAYMENT",
+                      "ACCPAYPAYMENT",
+                      "ARCREDITPAYMENT",
+                      "APCREDITPAYMENT",
+                      "CASHREC",
+                      "CASHPAID",
+                      "TRANSFER",
+                      "ARPREPAYMENT",
+                      "APPREPAYMENT",
+                      "AROVERPAYMENT",
+                      "APOVERPAYMENT",
+                      "EXPCLAIM",
+                      "EXPPAYMENT",
+                      "MANJOURNAL",
+                      "PAYSLIP",
+                      "WAGEPAYABLE",
+                      "INTEGRATEDPAYROLLPE",
+                      "INTEGRATEDPAYROLLPT",
+                      "EXTERNALSPENDMONEY",
+                      "INTEGRATEDPAYROLLPTPAYMENT",
+                      "INTEGRATEDPAYROLLCN"
+                    ],
+                    "description": "The type of the transaction that produced this journal."
+                  },
+                  "JournalLines": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "The journal's debit/credit lines; surfaced opaque. NetAmount, GrossAmount and TaxAmount live inside and are not separately typed — all money on this resource is nested here, so no top-level number:money field exists."
+                  }
                 }
               }
             }

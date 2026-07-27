@@ -2,19 +2,33 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "invoices",
   "display_name": "Invoices",
-  "description": "Sales (ACCREC) and purchase (ACCPAY) invoices.",
-  "tags": ["accounting", "transactions"],
+  "description": "Xero sales invoices (ACCREC) and bills (ACCPAY), including their over-payment and prepayment variants. Reads are page-paginated and support incremental sync on UpdatedDateUTC via the If-Modified-Since request header. PUT Invoices creates an invoice; POST Invoices creates-or-updates one matched on InvoiceID. The response also carries DateString / DueDateString / UpdatedDateUTCString — example-only duplicate serialisations of Date, DueDate and UpdatedDateUTC — which are deliberately not surfaced: each underlying field is already typed at its true grain (Date/DueDate as Date32, UpdatedDateUTC as Timestamp(MILLISECOND, UTC)), and the String siblings would re-emit the same instant at a coarser, zoneless grain. The LIST endpoint returns LineItems as an empty array; line items are only populated on the single-invoice GET, which this endpoint does not model.",
+  "tags": [
+    "accounting",
+    "invoices",
+    "receivables",
+    "payables"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "Invoices",
-        "query": {
-          "page": { "from_param": "page" },
-          "pageSize": { "from_param": "pageSize" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "page": {
+            "from_param": "page"
+          },
+          "pageSize": {
+            "from_param": "pageSize"
+          },
+          "unitdp": {
+            "from_param": "unitdp"
+          }
         }
       },
       "params": {
@@ -23,33 +37,59 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "1-based page number."
+          "minimum": 1,
+          "description": "1-based page number; owned by pagination."
         },
         "pageSize": {
           "in": "query",
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "default": 100,
-          "maximum": 1000,
-          "description": "Records per page (max 1000)."
+          "minimum": 1,
+          "description": "Records per page; owned by pagination. Xero documents a default of 100 and states no maximum, so no pagination `max` is declared."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only invoices created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC)."
+        },
+        "unitdp": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "default": {
+            "literal": 4
+          },
+          "description": "Unit decimal places. unitdp=4 opts in to four-decimal unit amounts inside the opaque LineItems; without it Xero rounds them to 2dp. Does not affect the top-level SubTotal/TotalTax/Total."
         }
       },
       "pagination": {
         "type": "page",
-        "page": { "param": "page", "initial": 1 },
-        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
-        "stop_when": { "empty": { "ref": "response.body.Invoices" } }
+        "page": {
+          "param": "page",
+          "initial": 1,
+          "increment_by": 1
+        },
+        "limit": {
+          "param": "pageSize",
+          "default": {
+            "ref": "runtime.batch_size"
+          }
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.Invoices"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -60,63 +100,722 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.Invoices" },
+        "records": {
+          "ref": "response.body.Invoices"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET Invoices response",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Response envelope: request correlation id."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Response envelope: call status (e.g. OK). Not the per-invoice Status field."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Response envelope: the app that made the call."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Response envelope: server timestamp, MS-JSON /Date(...)/ form."
+            },
+            "pagination": {
+              "type": "object",
+              "description": "Page-number pagination envelope returned alongside the records.",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "pageSize": {
+                  "type": "integer"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "itemCount": {
+                  "type": "integer"
+                }
+              }
+            },
             "Invoices": {
               "type": "array",
+              "description": "The invoice records for this page.",
               "items": {
                 "type": "object",
+                "title": "Invoice",
+                "required": [
+                  "InvoiceID",
+                  "Type",
+                  "Status",
+                  "UpdatedDateUTC"
+                ],
                 "properties": {
-                  "Type":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Contact":             { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "LineItems":           { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Date":                { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "DueDate":             { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "LineAmountTypes":     { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "InvoiceNumber":       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Reference":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "BrandingThemeID":     { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "Url":                 { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "CurrencyCode":        { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "CurrencyRate":        { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Status":              { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "SentToContact":       { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "ExpectedPaymentDate": { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "PlannedPaymentDate":  { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CISDeduction":        { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "CISRate":             { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "SubTotal":            { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "TotalTax":            { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Total":               { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "TotalDiscount":       { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "InvoiceID":           { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "RepeatingInvoiceID":  { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "HasAttachments":      { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "IsDiscounted":        { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "Payments":            { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Prepayments":         { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Overpayments":        { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "AmountDue":           { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "AmountPaid":          { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "FullyPaidOnDate":     { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "AmountCredited":      { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "UpdatedDateUTC":      { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CreditNotes":         { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Attachments":         { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "HasErrors":           { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "StatusAttributeString": { "type": "string", "native_type": "String", "arrow_type": "Utf8" },
-                  "ValidationErrors":    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Warnings":            { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "InvoiceAddresses":    { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "InvoiceID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the invoice, e.g. 046d8a6d-1ae1-4b4d-9340-5601bdf41b87; the resource primary key."
+                  },
+                  "InvoiceNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Human-readable invoice/bill number. Documented unique within an organisation, and a viable alternate natural key, but not used as the upsert conflict key."
+                  },
+                  "Type": {
+                    "type": "string",
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "ACCPAY",
+                      "ACCPAYCREDIT",
+                      "APOVERPAYMENT",
+                      "APPREPAYMENT",
+                      "ACCREC",
+                      "ACCRECCREDIT",
+                      "AROVERPAYMENT",
+                      "ARPREPAYMENT"
+                    ],
+                    "description": "Invoice type — ACCREC family is a sales invoice, ACCPAY family is a bill."
+                  },
+                  "Status": {
+                    "type": "string",
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "DRAFT",
+                      "SUBMITTED",
+                      "DELETED",
+                      "AUTHORISED",
+                      "PAID",
+                      "VOIDED"
+                    ],
+                    "description": "Invoice status."
+                  },
+                  "LineAmountTypes": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "Exclusive",
+                      "Inclusive",
+                      "NoTax"
+                    ],
+                    "description": "How line amounts treat tax."
+                  },
+                  "Reference": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Additional reference number (ACCREC only)."
+                  },
+                  "BrandingThemeID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Branding theme applied to the invoice."
+                  },
+                  "Url": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uri",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Link to a source document in an external system."
+                  },
+                  "CurrencyCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "iso-4217",
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Xero CurrencyCode enum (~160 ISO-4217 members incl. retired codes); typed as an open string rather than inlining the full domain. Sample: NZD."
+                  },
+                  "CurrencyRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "Exchange rate to the base currency (a ratio, e.g. 1.000000) — not money, so it stays Float64; Decimal128(19, 4) would silently round a six-decimal rate."
+                  },
+                  "SubTotal": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total of the invoice excluding tax."
+                  },
+                  "TotalTax": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total tax on the invoice."
+                  },
+                  "Total": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total of the invoice including tax."
+                  },
+                  "TotalDiscount": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Total of discounts applied on the invoice line items."
+                  },
+                  "AmountDue": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Amount remaining to be paid on the invoice."
+                  },
+                  "AmountPaid": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Sum of payments received for the invoice."
+                  },
+                  "AmountCredited": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Sum of all credit notes, over-payments and prepayments applied to the invoice."
+                  },
+                  "CISDeduction": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "CIS deduction amount withheld (UK Construction Industry Scheme). A currency amount, so money."
+                  },
+                  "CISRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "CIS deduction rate as a percentage — a rate, not a currency amount, so it stays Float64."
+                  },
+                  "SentToContact": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the invoice has been flagged as sent to the contact."
+                  },
+                  "HasAttachments": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the invoice has attachments."
+                  },
+                  "IsDiscounted": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether any line item on the invoice carries a discount."
+                  },
+                  "HasErrors": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the invoice has validation errors."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  },
+                  "RepeatingInvoiceID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Identifier of the repeating-invoice template this invoice was generated from."
+                  },
+                  "Date": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Invoice date, MS-JSON date-only envelope (e.g. /Date(1539993600000+0000)/). Calendar date — no time component, so Date32 rather than a manufactured midnight timestamp."
+                  },
+                  "DueDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the invoice is due, MS-JSON date-only envelope (e.g. /Date(1546128000000+0000)/)."
+                  },
+                  "FullyPaidOnDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the invoice was fully paid, MS-JSON date-only envelope (e.g. /Date(1543449600000+0000)/). Populated only once AmountDue reaches zero."
+                  },
+                  "ExpectedPaymentDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Expected payment date entered on an ACCREC invoice. No wire sample was reachable; the MS-JSON date-only shape is taken from the schema, which types it identically to Date and DueDate."
+                  },
+                  "PlannedPaymentDate": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Planned payment date entered on an ACCPAY bill. No wire sample was reachable; same schema basis as ExpectedPaymentDate."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp, MS-JSON with explicit offset (e.g. /Date(1541176290160+0000)/) — UTC-anchored per that sample. The replication cursor."
+                  },
+                  "Contact": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Contact the invoice is against; surfaced opaque."
+                  },
+                  "LineItems": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Line items; surfaced opaque. UnitAmount/LineAmount/TaxAmount live inside and are not separately typed. The LIST endpoint returns this as an empty array — line items are only populated on the single-invoice GET."
+                  },
+                  "Payments": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Payments applied to the invoice; surfaced opaque."
+                  },
+                  "Prepayments": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Prepayments allocated against the invoice; surfaced opaque."
+                  },
+                  "Overpayments": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Over-payments allocated against the invoice; surfaced opaque."
+                  },
+                  "CreditNotes": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Credit notes allocated against the invoice; surfaced opaque."
+                  },
+                  "InvoiceAddresses": {
+                    "type": "array",
+                    "nullable": true,
+                    "native_type": "array",
+                    "arrow_type": "Json",
+                    "description": "Invoice addresses (e-invoicing); surfaced opaque."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "Invoices",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "Invoices": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero invoice (create)",
+            "description": "One Invoice object; the engine wraps it in Xero's Invoices array envelope. Per-field create requiredness is not declared — the researched facts ground the Invoice field set and its wire types, not the provider's per-field create requirements.",
+            "type": "object",
+            "properties": {
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "ACCPAY",
+                  "ACCPAYCREDIT",
+                  "APOVERPAYMENT",
+                  "APPREPAYMENT",
+                  "ACCREC",
+                  "ACCRECCREDIT",
+                  "AROVERPAYMENT",
+                  "ARPREPAYMENT"
+                ],
+                "description": "Invoice type — ACCREC family is a sales invoice, ACCPAY family is a bill."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the invoice is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque. Send unitdp=4 to preserve four-decimal unit amounts."
+              },
+              "Date": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Invoice date (calendar date)."
+              },
+              "DueDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the invoice is due (calendar date)."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "InvoiceNumber": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Invoice/bill number. Xero auto-generates one when omitted."
+              },
+              "Reference": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Additional reference number (ACCREC only)."
+              },
+              "BrandingThemeID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Branding theme to apply to the invoice."
+              },
+              "Url": {
+                "type": "string",
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document in an external system."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the invoice, e.g. NZD."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency (a ratio, not money)."
+              },
+              "Status": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "SUBMITTED",
+                  "DELETED",
+                  "AUTHORISED",
+                  "PAID",
+                  "VOIDED"
+                ],
+                "description": "Invoice status to create the invoice in."
+              },
+              "SentToContact": {
+                "type": "boolean",
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Flag the invoice as sent to the contact."
+              },
+              "ExpectedPaymentDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Expected payment date on an ACCREC invoice (calendar date)."
+              },
+              "PlannedPaymentDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Planned payment date on an ACCPAY bill (calendar date)."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
+          }
+        }
+      },
+      "upsert": {
+        "request": {
+          "method": "POST",
+          "path": "Invoices",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "Invoices": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal unit amounts on the posted LineItems instead of rounding them to 2dp."
+          }
+        },
+        "conflict_keys": [
+          "InvoiceID"
+        ],
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero invoice (create or update)",
+            "description": "One Invoice object; the engine wraps it in Xero's Invoices array envelope. Xero matches on InvoiceID and creates a new invoice when it does not resolve to an existing one. Per-field requiredness is not declared: an update only needs the conflict key plus the fields being changed, and the researched facts ground the field set and wire types, not per-field write requirements.",
+            "type": "object",
+            "properties": {
+              "InvoiceID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the invoice to match; the upsert conflict key."
+              },
+              "Type": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "ACCPAY",
+                  "ACCPAYCREDIT",
+                  "APOVERPAYMENT",
+                  "APPREPAYMENT",
+                  "ACCREC",
+                  "ACCRECCREDIT",
+                  "AROVERPAYMENT",
+                  "ARPREPAYMENT"
+                ],
+                "description": "Invoice type — ACCREC family is a sales invoice, ACCPAY family is a bill."
+              },
+              "Contact": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Contact the invoice is against (ContactID or Name); passed through opaque."
+              },
+              "LineItems": {
+                "type": "array",
+                "native_type": "array",
+                "arrow_type": "Json",
+                "description": "Line items; passed through opaque. Sending line items replaces the existing set on an update."
+              },
+              "Date": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Invoice date (calendar date)."
+              },
+              "DueDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the invoice is due (calendar date)."
+              },
+              "LineAmountTypes": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "Exclusive",
+                  "Inclusive",
+                  "NoTax"
+                ],
+                "description": "How line amounts treat tax."
+              },
+              "InvoiceNumber": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Invoice/bill number."
+              },
+              "Reference": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Additional reference number (ACCREC only)."
+              },
+              "BrandingThemeID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Branding theme to apply to the invoice."
+              },
+              "Url": {
+                "type": "string",
+                "format": "uri",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Link to a source document in an external system."
+              },
+              "CurrencyCode": {
+                "type": "string",
+                "format": "iso-4217",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Currency of the invoice, e.g. NZD."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the base currency (a ratio, not money)."
+              },
+              "Status": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "DRAFT",
+                  "SUBMITTED",
+                  "DELETED",
+                  "AUTHORISED",
+                  "PAID",
+                  "VOIDED"
+                ],
+                "description": "Invoice status; set VOIDED or DELETED to void/delete an existing invoice."
+              },
+              "SentToContact": {
+                "type": "boolean",
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Flag the invoice as sent to the contact."
+              },
+              "ExpectedPaymentDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Expected payment date on an ACCREC invoice (calendar date)."
+              },
+              "PlannedPaymentDate": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Planned payment date on an ACCPAY bill (calendar date)."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }

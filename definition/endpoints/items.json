@@ -2,15 +2,26 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "items",
   "display_name": "Items",
-  "description": "Inventory and non-inventory products/services (the items list).",
-  "tags": ["accounting", "items", "settings"],
+  "description": "Inventory and service items (products, services and tracked inventory) for the connected Xero organisation. Read is a single UNPAGINATED GET Items — the generated getItems parameter set is exactly xero_tenant_id, if_modified_since, where, order and unitdp, Items appears in no pageSize rollout, and the generated Items wrapper model carries only the record array (no sibling pagination object, unlike Invoices/Contacts) — so no paginator is declared. Incremental sync is driven by the If-Modified-Since REQUEST HEADER on the UpdatedDateUTC cursor. Write covers both modes: PUT Items creates, POST Items creates-or-updates matched on ItemID. UnitPrice is not a top-level column on this resource — it lives inside the opaque PurchaseDetails/SalesDetails objects, which is what the unitdp query param governs.",
+  "tags": [
+    "accounting",
+    "inventory",
+    "items"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "Items",
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "unitdp": {
+            "from_param": "unitdp"
+          }
         }
       },
       "params": {
@@ -18,12 +29,25 @@
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only records created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC)."
+        },
+        "unitdp": {
+          "in": "query",
+          "type": "integer",
+          "required": false,
+          "default": {
+            "literal": 4
+          },
+          "description": "Unit decimal places. unitdp=4 opts in to four-decimal unit amounts; without it Xero rounds them to 2dp. On Items the affected UnitPrice lives inside the opaque PurchaseDetails/SalesDetails payloads, so this changes no typed top-level column — it preserves precision inside the Json columns."
         }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -34,38 +58,416 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.Items" },
+        "records": {
+          "ref": "response.body.Items"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET Items response",
+          "description": "Xero wraps records in the standard response envelope alongside Id/Status/ProviderName/DateTimeUTC metadata; the Items array carries the records. No sibling pagination object is returned on this resource.",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Envelope: request correlation id assigned by Xero."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Envelope: request status, 'OK' on success."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Envelope: the name of the calling Xero app."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Envelope: response timestamp in Xero MS-JSON form, e.g. /Date(1550797359081)/."
+            },
             "Items": {
               "type": "array",
+              "description": "The record collection.",
               "items": {
                 "type": "object",
+                "title": "Item",
                 "properties": {
-                  "Code":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "InventoryAssetAccountCode": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Name":                      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "IsSold":                    { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "IsPurchased":               { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "Description":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "PurchaseDescription":       { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "PurchaseDetails":           { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "SalesDetails":              { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "IsTrackedAsInventory":      { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "TotalCostPool":             { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "QuantityOnHand":            { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "UpdatedDateUTC":            { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "ItemID":                    { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "StatusAttributeString":     { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "ValidationErrors":          { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "ItemID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": false,
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the item; the resource primary key and the upsert conflict key."
+                  },
+                  "Code": {
+                    "type": "string",
+                    "nullable": false,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "User-defined item code, max 30 characters. The only property Xero marks Required on this resource."
+                  },
+                  "Name": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Name of the item."
+                  },
+                  "Description": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Sales description of the item."
+                  },
+                  "PurchaseDescription": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Purchase description of the item."
+                  },
+                  "PurchaseDetails": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Purchase-side defaults (UnitPrice, account and tax codes); surfaced opaque. UnitPrice lives inside and is not separately typed — its wire precision is governed by the unitdp query param."
+                  },
+                  "SalesDetails": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Sales-side defaults (UnitPrice, account and tax codes); surfaced opaque. UnitPrice lives inside and is not separately typed — its wire precision is governed by the unitdp query param."
+                  },
+                  "IsTrackedAsInventory": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "True when the item is a tracked inventory item."
+                  },
+                  "InventoryAssetAccountCode": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Account code the inventory asset is posted to; set on tracked inventory items."
+                  },
+                  "TotalCostPool": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Value of the item on hand, calculated using average cost accounting — a currency-denominated amount, so it is money. Maintained by Xero."
+                  },
+                  "QuantityOnHand": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "Quantity of the item on hand. A count, NOT money — it stays Float64 rather than being forced to 4dp. Maintained by Xero."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp in Xero MS-JSON form with an explicit offset, e.g. /Date(1550797359120+0000)/. Zone-aware per that sample. The replication cursor."
+                  },
+                  "IsSold": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the item is available for sale."
+                  },
+                  "IsPurchased": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the item is available for purchase."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "Items",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "Items": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal UnitPrice values inside the posted PurchaseDetails/SalesDetails instead of rounding them to 2dp."
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero item (create)",
+            "description": "One Item object, wrapped by the endpoint in Xero's Items array envelope. Server-maintained fields (ItemID, TotalCostPool, QuantityOnHand, UpdatedDateUTC, StatusAttributeString) are deliberately not part of the create contract.",
+            "type": "object",
+            "required": [
+              "Code"
+            ],
+            "properties": {
+              "Code": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "User-defined item code, max 30 characters. The only property Xero marks Required."
+              },
+              "Name": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Name of the item."
+              },
+              "Description": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Sales description of the item."
+              },
+              "PurchaseDescription": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Purchase description of the item."
+              },
+              "PurchaseDetails": {
+                "type": "object",
+                "nullable": true,
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Purchase-side defaults (UnitPrice, account and tax codes); passed through opaque."
+              },
+              "SalesDetails": {
+                "type": "object",
+                "nullable": true,
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Sales-side defaults (UnitPrice, account and tax codes); passed through opaque."
+              },
+              "IsTrackedAsInventory": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "True when the item is a tracked inventory item."
+              },
+              "InventoryAssetAccountCode": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Account code the inventory asset is posted to; required by Xero for tracked inventory items."
+              },
+              "IsSold": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the item is available for sale."
+              },
+              "IsPurchased": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the item is available for purchase."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
+          }
+        }
+      },
+      "upsert": {
+        "request": {
+          "method": "POST",
+          "path": "Items",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "query": {
+            "unitdp": {
+              "from_param": "unitdp"
+            }
+          },
+          "body": {
+            "Items": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "params": {
+          "unitdp": {
+            "in": "query",
+            "type": "integer",
+            "required": false,
+            "default": {
+              "literal": 4
+            },
+            "description": "Unit decimal places. unitdp=4 lets Xero accept and return four-decimal UnitPrice values inside the posted PurchaseDetails/SalesDetails instead of rounding them to 2dp."
+          }
+        },
+        "conflict_keys": [
+          "ItemID"
+        ],
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero item (create or update)",
+            "description": "One Item object, wrapped by the endpoint in Xero's Items array envelope. ItemID is the match key; Xero creates a new item when it does not resolve to an existing one. Server-maintained fields (TotalCostPool, QuantityOnHand, UpdatedDateUTC, StatusAttributeString) are not part of the write contract.",
+            "type": "object",
+            "required": [
+              "ItemID",
+              "Code"
+            ],
+            "properties": {
+              "ItemID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the item to match; the upsert conflict key. Xero creates a new item when it does not resolve to an existing one."
+              },
+              "Code": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "User-defined item code, max 30 characters. The only property Xero marks Required."
+              },
+              "Name": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Name of the item."
+              },
+              "Description": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Sales description of the item."
+              },
+              "PurchaseDescription": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Purchase description of the item."
+              },
+              "PurchaseDetails": {
+                "type": "object",
+                "nullable": true,
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Purchase-side defaults (UnitPrice, account and tax codes); passed through opaque."
+              },
+              "SalesDetails": {
+                "type": "object",
+                "nullable": true,
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Sales-side defaults (UnitPrice, account and tax codes); passed through opaque."
+              },
+              "IsTrackedAsInventory": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "True when the item is a tracked inventory item."
+              },
+              "InventoryAssetAccountCode": {
+                "type": "string",
+                "nullable": true,
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Account code the inventory asset is posted to; required by Xero for tracked inventory items."
+              },
+              "IsSold": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the item is available for sale."
+              },
+              "IsPurchased": {
+                "type": "boolean",
+                "nullable": true,
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the item is available for purchase."
+              }
+            }
+          }
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }

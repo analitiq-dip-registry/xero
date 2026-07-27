@@ -2,19 +2,28 @@
   "$schema": "https://schemas.analitiq.ai/api-endpoint/latest.json",
   "endpoint_id": "payments",
   "display_name": "Payments",
-  "description": "Payments made against invoices, credit notes, prepayments and overpayments.",
-  "tags": ["accounting", "transactions"],
+  "description": "Payments applied against invoices, credit notes, prepayments and overpayments in the connected Xero organisation. Reads are page-paginated (page / pageSize with the sibling pagination envelope) and support incremental sync on UpdatedDateUTC via the If-Modified-Since REQUEST HEADER. Write covers CREATE ONLY. Xero exposes PUT Payments (createPayments) and the collection-level POST Payments (createPayment, 'creates a single payment for invoice or credit notes') — both are CREATEs. Unlike the other writable Xero collection resources there is no update-or-create: Xero documents NO update operation for an existing payment, and the item-level POST Payments/{PaymentID} is deletePayment (body PaymentDelete {Status: DELETED}), i.e. delete/reverse. So no upsert mode is authored; PaymentID is the server-generated record identity, not a documented upsert-match key. Payments does not accept the unitdp query param.",
+  "tags": [
+    "accounting",
+    "payments"
+  ],
   "operations": {
     "read": {
       "request": {
         "method": "GET",
         "path": "Payments",
-        "query": {
-          "page": { "from_param": "page" },
-          "pageSize": { "from_param": "pageSize" }
-        },
         "headers": {
-          "If-Modified-Since": { "from_param": "If-Modified-Since" }
+          "If-Modified-Since": {
+            "from_param": "If-Modified-Since"
+          }
+        },
+        "query": {
+          "page": {
+            "from_param": "page"
+          },
+          "pageSize": {
+            "from_param": "pageSize"
+          }
         }
       },
       "params": {
@@ -23,33 +32,50 @@
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "description": "1-based page number."
+          "minimum": 1,
+          "description": "1-based page number; owned by pagination."
         },
         "pageSize": {
           "in": "query",
           "type": "integer",
           "required": false,
           "controlled_by": "pagination",
-          "default": 100,
-          "maximum": 1000,
-          "description": "Records per page (max 1000)."
+          "minimum": 1,
+          "description": "Records per page; owned by pagination. Xero documents a default of 100 and states no maximum for this resource, so no pagination `max` is declared."
         },
         "If-Modified-Since": {
           "in": "header",
           "type": "string",
           "required": false,
+          "format": "date-time",
           "controlled_by": "replication",
-          "description": "RFC3339 timestamp; only records created/modified at or after are returned."
+          "description": "Xero returns only records created or modified at/after this timestamp. Wire format: 2020-02-06T12:17:43.202-08:00. Owned by replication (cursor UpdatedDateUTC). getPayments $refs the ifModifiedSince parameter in the Xero OpenAPI spec, which is authoritative here even though the generated xero-ruby doc omits it."
         }
       },
       "pagination": {
         "type": "page",
-        "page": { "param": "page", "initial": 1 },
-        "limit": { "param": "pageSize", "default": 100, "max": 1000 },
-        "stop_when": { "empty": { "ref": "response.body.Payments" } }
+        "page": {
+          "param": "page",
+          "initial": 1,
+          "increment_by": 1
+        },
+        "limit": {
+          "param": "pageSize",
+          "default": {
+            "ref": "runtime.batch_size"
+          }
+        },
+        "stop_when": {
+          "empty": {
+            "ref": "response.body.Payments"
+          }
+        }
       },
       "replication": {
-        "supported_methods": ["full_refresh", "incremental"],
+        "supported_methods": [
+          "full_refresh",
+          "incremental"
+        ],
         "cursor_mappings": [
           {
             "cursor_field": "UpdatedDateUTC",
@@ -60,50 +86,461 @@
         ]
       },
       "response": {
-        "records": { "ref": "response.body.Payments" },
+        "records": {
+          "ref": "response.body.Payments"
+        },
         "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "title": "Xero GET Payments response",
+          "description": "Xero wraps records in the standard response envelope alongside Id/Status/ProviderName/DateTimeUTC metadata and, on page-paginated resources, a sibling pagination object; the Payments array carries the records.",
           "type": "object",
           "properties": {
-            "Id":           { "type": "string", "native_type": "UUID",     "arrow_type": "Utf8" },
-            "Status":       { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "ProviderName": { "type": "string", "native_type": "String",   "arrow_type": "Utf8" },
-            "DateTimeUTC":  { "type": "string", "native_type": "DateTime", "arrow_type": "Utf8" },
+            "Id": {
+              "type": "string",
+              "description": "Response envelope: request correlation id assigned by Xero."
+            },
+            "Status": {
+              "type": "string",
+              "description": "Response envelope: call status, 'OK' on success. Not the per-payment Status field."
+            },
+            "ProviderName": {
+              "type": "string",
+              "description": "Response envelope: the name of the calling Xero app."
+            },
+            "DateTimeUTC": {
+              "type": "string",
+              "description": "Response envelope: server timestamp in Xero MS-JSON form, e.g. /Date(1550797359081)/."
+            },
+            "pagination": {
+              "type": "object",
+              "description": "Page-number pagination envelope returned alongside the records.",
+              "properties": {
+                "page": {
+                  "type": "integer"
+                },
+                "pageSize": {
+                  "type": "integer"
+                },
+                "pageCount": {
+                  "type": "integer"
+                },
+                "itemCount": {
+                  "type": "integer"
+                }
+              }
+            },
             "Payments": {
               "type": "array",
+              "description": "The payment records for this page.",
               "items": {
                 "type": "object",
+                "title": "Payment",
                 "properties": {
-                  "Invoice":               { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "CreditNote":            { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Prepayment":            { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Overpayment":           { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "InvoiceNumber":         { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "CreditNoteNumber":      { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "BatchPayment":          { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Account":               { "type": "object",  "native_type": "Json",     "arrow_type": "Json" },
-                  "Code":                  { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Date":                  { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "CurrencyRate":          { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Amount":                { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "BankAmount":            { "type": "number",  "native_type": "Decimal",  "arrow_type": "Float64" },
-                  "Reference":             { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "IsReconciled":          { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "Status":                { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "PaymentType":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "UpdatedDateUTC":        { "type": "string",  "native_type": "DateTime", "arrow_type": "Utf8" },
-                  "PaymentID":             { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "BatchPaymentID":        { "type": "string",  "native_type": "UUID",     "arrow_type": "Utf8" },
-                  "BankAccountNumber":     { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Particulars":           { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "Details":               { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "HasAccount":            { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "HasValidationErrors":   { "type": "boolean", "native_type": "Boolean",  "arrow_type": "Boolean" },
-                  "StatusAttributeString": { "type": "string",  "native_type": "String",   "arrow_type": "Utf8" },
-                  "ValidationErrors":      { "type": "array",   "native_type": "Json",     "arrow_type": "Json" },
-                  "Warnings":              { "type": "array",   "native_type": "Json",     "arrow_type": "Json" }
+                  "PaymentID": {
+                    "type": "string",
+                    "format": "uuid",
+                    "nullable": false,
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier for the payment, e.g. 99ea7f6b-c513-4066-bc27-b7c65dcd76c2. The resource primary key — server-generated and read-only."
+                  },
+                  "Date": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate",
+                    "arrow_type": "Date32",
+                    "description": "Date the payment is applied, MS-JSON date-only envelope (e.g. /Date(1721347200000+0000)/); the Xero spec marks this field x-is-msdate: true. Calendar date — no time component. The Payment model has no DateString sibling."
+                  },
+                  "BankAmount": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Amount of the payment in the currency of the bank account it was made from/into. Monetary."
+                  },
+                  "Amount": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number:money",
+                    "arrow_type": "Decimal128(19, 4)",
+                    "description": "Amount of the payment in the currency of the document being paid. Monetary."
+                  },
+                  "CurrencyRate": {
+                    "type": "number",
+                    "nullable": true,
+                    "native_type": "number",
+                    "arrow_type": "Float64",
+                    "description": "Exchange rate applied when the payment is in a currency other than the organisation's base currency (a ratio, e.g. 0.7500) — not money, so it stays Float64 rather than being rounded to 4dp."
+                  },
+                  "PaymentType": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "ACCRECPAYMENT",
+                      "ACCPAYPAYMENT",
+                      "ARCREDITPAYMENT",
+                      "APCREDITPAYMENT",
+                      "AROVERPAYMENTPAYMENT",
+                      "ARPREPAYMENTPAYMENT",
+                      "APPREPAYMENTPAYMENT",
+                      "APOVERPAYMENTPAYMENT"
+                    ],
+                    "description": "What the payment was applied to; derived by Xero from the document being paid. Sample: ACCRECPAYMENT."
+                  },
+                  "Status": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string:enum",
+                    "arrow_type": "Utf8",
+                    "enum": [
+                      "AUTHORISED",
+                      "DELETED"
+                    ],
+                    "description": "Payment status."
+                  },
+                  "UpdatedDateUTC": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "msdate-time",
+                    "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                    "description": "Last-modified timestamp, Xero MS-JSON with an explicit offset, e.g. /Date(1541176592690+0000)/ — UTC-anchored per that sample. The replication cursor."
+                  },
+                  "Reference": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Optional free-text reference for the payment, e.g. ref/cheque."
+                  },
+                  "IsReconciled": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the payment has been reconciled. The top-level value is a real JSON boolean (the copy nested inside BatchPayment is a JSON string)."
+                  },
+                  "Account": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Bank account the payment was made from/into; surfaced opaque."
+                  },
+                  "Invoice": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Invoice the payment is applied to; surfaced opaque."
+                  },
+                  "CreditNote": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Credit note the payment is applied to; surfaced opaque."
+                  },
+                  "Prepayment": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Prepayment the payment is applied to; surfaced opaque."
+                  },
+                  "Overpayment": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Overpayment the payment is applied to; surfaced opaque."
+                  },
+                  "InvoiceNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Number of the invoice this payment is applied to, e.g. INV-4003. A denormalised convenience field on the Payment record; the nested Invoice object is surfaced opaque, so this value is not otherwise recoverable. May be null on payments applied to a credit note, prepayment or overpayment."
+                  },
+                  "CreditNoteNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Number of the credit note this payment is applied to. A denormalised convenience field on the Payment record; the nested CreditNote object is surfaced opaque, so this value is not otherwise recoverable. May be null on payments applied to an invoice, prepayment or overpayment."
+                  },
+                  "BatchPayment": {
+                    "type": "object",
+                    "nullable": true,
+                    "native_type": "object",
+                    "arrow_type": "Json",
+                    "description": "Batch payment this payment belongs to; surfaced opaque — Xero returns its nested numerics and booleans as JSON strings, so it must not be descended into."
+                  },
+                  "HasAccount": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the payment has an associated account."
+                  },
+                  "HasValidationErrors": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "native_type": "boolean",
+                    "arrow_type": "Boolean",
+                    "description": "Whether the payment carries validation errors."
+                  },
+                  "BatchPaymentID": {
+                    "type": "string",
+                    "nullable": true,
+                    "format": "uuid",
+                    "native_type": "string:uuid",
+                    "arrow_type": "Utf8",
+                    "description": "Xero identifier of the batch payment this payment belongs to, when part of a batch."
+                  },
+                  "BankAccountNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "The supplier's bank account number the payment is being made to."
+                  },
+                  "Particulars": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "The supplier's bank account particulars carried with the payment."
+                  },
+                  "Code": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "The supplier's bank account code carried with the payment."
+                  },
+                  "Details": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "The information to appear on the supplier's bank statement for this payment."
+                  },
+                  "StatusAttributeString": {
+                    "type": "string",
+                    "nullable": true,
+                    "native_type": "string",
+                    "arrow_type": "Utf8",
+                    "description": "Validation status attribute returned on write responses (ERROR / WARNING)."
+                  }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "write": {
+      "insert": {
+        "request": {
+          "method": "PUT",
+          "path": "Payments",
+          "headers": {
+            "Content-Type": "application/json"
+          },
+          "body": {
+            "Payments": [
+              {
+                "from_input": "record"
+              }
+            ]
+          }
+        },
+        "input": {
+          "schema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "title": "Xero Payment (PUT Payments request body)",
+            "description": "One Payment object. Xero's createPayments request body is a Payments array of Payment objects; this endpoint posts exactly one payment per request (a singleton envelope) so the documented Idempotency-Key header stays authorable — idempotency and batching are mutually exclusive, and no first-party Xero batch cap is grounded. Requiredness is not declared: the researched facts ground the Payment field set and its wire types, not the provider's per-field create requirements. This is a CREATE only — Xero documents no update operation for an existing payment.",
+            "type": "object",
+            "properties": {
+              "PaymentID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier for the payment. Server-assigned on create; carried by the Payment schema and returned in the write response. NOT an upsert-match key — Xero exposes no update operation for a payment."
+              },
+              "Date": {
+                "type": "string",
+                "native_type": "msdate",
+                "arrow_type": "Date32",
+                "description": "Date the payment is applied (calendar date, MS-JSON date-only envelope)."
+              },
+              "BankAmount": {
+                "type": "number",
+                "native_type": "number:money",
+                "arrow_type": "Decimal128(19, 4)",
+                "description": "Amount of the payment in the currency of the bank account it is made from/into."
+              },
+              "Amount": {
+                "type": "number",
+                "native_type": "number:money",
+                "arrow_type": "Decimal128(19, 4)",
+                "description": "Amount of the payment in the currency of the document being paid."
+              },
+              "CurrencyRate": {
+                "type": "number",
+                "native_type": "number",
+                "arrow_type": "Float64",
+                "description": "Exchange rate to the organisation's base currency (a ratio) — not money."
+              },
+              "PaymentType": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "ACCRECPAYMENT",
+                  "ACCPAYPAYMENT",
+                  "ARCREDITPAYMENT",
+                  "APCREDITPAYMENT",
+                  "AROVERPAYMENTPAYMENT",
+                  "ARPREPAYMENTPAYMENT",
+                  "APPREPAYMENTPAYMENT",
+                  "APOVERPAYMENTPAYMENT"
+                ],
+                "description": "What the payment is applied to; normally derived by Xero from the document being paid."
+              },
+              "Status": {
+                "type": "string",
+                "native_type": "string:enum",
+                "arrow_type": "Utf8",
+                "enum": [
+                  "AUTHORISED",
+                  "DELETED"
+                ],
+                "description": "Payment status."
+              },
+              "UpdatedDateUTC": {
+                "type": "string",
+                "native_type": "msdate-time",
+                "arrow_type": "Timestamp(MILLISECOND, UTC)",
+                "description": "Last-modified timestamp, Xero MS-JSON with explicit offset. Maintained by Xero."
+              },
+              "Reference": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Optional free-text reference for the payment."
+              },
+              "IsReconciled": {
+                "type": "boolean",
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the payment has been reconciled."
+              },
+              "Account": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Bank account the payment is made from/into (AccountID or Code); passed through opaque."
+              },
+              "Invoice": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Invoice being paid (InvoiceID or InvoiceNumber); passed through opaque."
+              },
+              "CreditNote": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Credit note being applied; passed through opaque."
+              },
+              "Prepayment": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Prepayment being applied; passed through opaque."
+              },
+              "Overpayment": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Overpayment being applied; passed through opaque."
+              },
+              "BatchPayment": {
+                "type": "object",
+                "native_type": "object",
+                "arrow_type": "Json",
+                "description": "Batch payment the payment belongs to; passed through opaque. Xero returns its nested numerics and booleans as JSON strings."
+              },
+              "HasAccount": {
+                "type": "boolean",
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the payment has an associated account. Maintained by Xero."
+              },
+              "HasValidationErrors": {
+                "type": "boolean",
+                "native_type": "boolean",
+                "arrow_type": "Boolean",
+                "description": "Whether the payment carries validation errors. Maintained by Xero."
+              },
+              "BatchPaymentID": {
+                "type": "string",
+                "format": "uuid",
+                "native_type": "string:uuid",
+                "arrow_type": "Utf8",
+                "description": "Xero identifier of the batch payment this payment belongs to."
+              },
+              "BankAccountNumber": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "The supplier's bank account number the payment is being made to."
+              },
+              "Particulars": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "The supplier's bank account particulars carried with the payment."
+              },
+              "Code": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "The supplier's bank account code carried with the payment."
+              },
+              "Details": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "The information to appear on the supplier's bank statement for this payment."
+              },
+              "StatusAttributeString": {
+                "type": "string",
+                "native_type": "string",
+                "arrow_type": "Utf8",
+                "description": "Validation status attribute returned on the write response (ERROR / WARNING)."
+              }
+            }
+          }
+        },
+        "idempotency": {
+          "in": "header",
+          "name": "Idempotency-Key"
+        },
+        "response": {
+          "success_when": {
+            "eq": [
+              {
+                "ref": "response.body.Status"
+              },
+              {
+                "literal": "OK"
+              }
+            ]
           }
         }
       }
