@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.0] - 2026-07-27
+
+### Changed
+- Update Xero connector to rc17 contracts with write support (#10)
+
 ## [0.1.0] - 2026-07-23
 
 ### Added
